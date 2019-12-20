@@ -71,6 +71,33 @@ class SiameseNet(nn.Module):
     def get_embedding(self, x):
         return self.embedding_net(x)
 
+class SiameseNet_ClassNet(nn.Module):
+    def __init__(self, embedding_net, n_classes):
+        super(SiameseNet_ClassNet, self).__init__()
+        self.embedding_net = embedding_net
+        self.nonlinear = nn.PReLU()
+        self.fc1 = nn.Linear(2, n_classes)
+        # self.fc2 = nn.Linear(2, n_classes)
+
+    def forward(self, x1, x2, outraw1, outraw2):
+        if type(outraw1) == type(None):
+            outraw1 = self.embedding_net(x1)
+        # output1 = self.nonlinear(outraw1)
+        # scores1 = F.log_softmax(self.fc1(output1), dim=-1)
+        output1 = self.nonlinear(outraw1)
+        scores1 = F.log_softmax(self.fc1(output1), dim=-1)
+       
+        if type(outraw2) == type(None):
+            outraw2= self.embedding_net(x2)
+        # output2 = self.nonlinear(outraw2)
+        # scores2 = F.log_softmax(self.fc2(output2), dim=-1)
+        output2  = self.nonlinear(outraw2)
+        scores2 = F.log_softmax(self.fc1(output2), dim=-1)
+        
+        return outraw1, outraw2, scores1, scores2
+
+    def get_embedding(self, x):
+        return self.embedding_net(x)
 
 class TripletNet(nn.Module):
     def __init__(self, embedding_net):

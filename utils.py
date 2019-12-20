@@ -2,7 +2,14 @@ from itertools import combinations
 
 import numpy as np
 import torch
+gpu = 3
 
+
+def write_txt(w_path, list_to_wr):
+    with open(w_path, "w") as output:
+        for k, val in enumerate(list_to_wr):
+            output.write(val + '\n')
+    return None
 
 def pdist(vectors):
     distance_matrix = -2 * vectors.mm(torch.t(vectors)) + vectors.pow(2).sum(dim=1).view(1, -1) + vectors.pow(2).sum(

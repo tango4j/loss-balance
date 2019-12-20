@@ -1,6 +1,37 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from utils import *
+# import torch.nn.CosineSimilarity as cos_sim
+import ipdb
+
+# DEVICE = 3
+
+def cosine_distance(x1, x2=None, eps=1e-8):
+    x2 = x1 if x2 is None else x2
+    w1 = x1.norm(p=2, dim=1, keepdim=True)
+    w2 = w1 if x2 is x1 else x2.norm(p=2, dim=1, keepdim=True)
+    return 1 - torch.mm(x1, x2.t()) / (w1 * w2.t()).clamp(min=eps)
+
+class CrossEntropy(nn.Module):
+    """
+    Contrastive loss
+    Takes embeddings of two samples and a target label == 1 if samples are from the same class and label == 0 otherwise
+    """
+    def __init__(self):
+        super(CrossEntropy, self).__init__()
+        self.eps = 1e-9
+        # self.cos_sim = cos_sim()
+
+    def forward(self, score, labels):
+        # NLL_loss = torch.nn.NLLLoss(reduction="none")
+        NLL_loss = torch.nn.NLLLoss(reduce=False)
+        losses = NLL_loss(score, labels)
+        loss_mean = losses.mean()
+        # ipdb.set_trace()
+
+        return loss_mean, losses
+
 
 
 class ContrastiveLoss(nn.Module):
@@ -13,12 +44,33 @@ class ContrastiveLoss(nn.Module):
         super(ContrastiveLoss, self).__init__()
         self.margin = margin
         self.eps = 1e-9
+        # self.cos_sim = cos_sim()
+
+    def forward(self, output1, output2, target, size_average=True):
+        distances = (output2 - output1).pow(2).sum(1)  # squared distances
+        # distances = cosine_distance(output2, output1)
+        losses = 0.5 * (target.float() * distances +
+                        (1 + -1 * target).float() * F.relu(self.margin - (distances + self.eps).sqrt()).pow(2))
+        return losses.mean() if size_average else losses.sum()
+
+class ContrastiveLoss_mod(nn.Module):
+    """
+    Contrastive loss
+    Takes embeddings of two samples and a target label == 1 if samples are from the same class and label == 0 otherwise
+    """
+
+    def __init__(self, margin):
+        super(ContrastiveLoss_mod, self).__init__()
+        self.margin = margin
+        self.eps = 1e-9
 
     def forward(self, output1, output2, target, size_average=True):
         distances = (output2 - output1).pow(2).sum(1)  # squared distances
         losses = 0.5 * (target.float() * distances +
                         (1 + -1 * target).float() * F.relu(self.margin - (distances + self.eps).sqrt()).pow(2))
-        return losses.mean() if size_average else losses.sum()
+        loss_mean = losses.mean() if size_average else losses.sum()
+        return loss_mean, distances, losses
+    
 
 
 class TripletLoss(nn.Module):
@@ -26,7 +78,6 @@ class TripletLoss(nn.Module):
     Triplet loss
     Takes embeddings of an anchor sample, a positive sample and a negative sample
     """
-
     def __init__(self, margin):
         super(TripletLoss, self).__init__()
         self.margin = margin
@@ -54,8 +105,8 @@ class OnlineContrastiveLoss(nn.Module):
     def forward(self, embeddings, target):
         positive_pairs, negative_pairs = self.pair_selector.get_pairs(embeddings, target)
         if embeddings.is_cuda:
-            positive_pairs = positive_pairs.cuda()
-            negative_pairs = negative_pairs.cuda()
+            positive_pairs = positive_pairs.cuda(DEVICE)
+            negative_pairs = negative_pairs.cuda(DEVICE)
         positive_loss = (embeddings[positive_pairs[:, 0]] - embeddings[positive_pairs[:, 1]]).pow(2).sum(1)
         negative_loss = F.relu(
             self.margin - (embeddings[negative_pairs[:, 0]] - embeddings[negative_pairs[:, 1]]).pow(2).sum(
@@ -82,7 +133,7 @@ class OnlineTripletLoss(nn.Module):
         triplets = self.triplet_selector.get_triplets(embeddings, target)
 
         if embeddings.is_cuda:
-            triplets = triplets.cuda()
+            triplets = triplets.cuda(DEVICE)
 
         ap_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 1]]).pow(2).sum(1)  # .pow(.5)
         an_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 2]]).pow(2).sum(1)  # .pow(.5)
