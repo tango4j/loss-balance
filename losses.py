@@ -28,11 +28,8 @@ class CrossEntropy(nn.Module):
         NLL_loss = torch.nn.NLLLoss(reduce=False)
         losses = NLL_loss(score, labels)
         loss_mean = losses.mean()
-        # ipdb.set_trace()
 
         return loss_mean, losses
-
-
 
 class ContrastiveLoss(nn.Module):
     """

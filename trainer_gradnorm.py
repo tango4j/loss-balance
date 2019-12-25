@@ -450,10 +450,8 @@ class TrInst:
         self.cum_MV_weight = initial_weight
         self.cum_KL_weight = initial_weight
         
-        self.batch_pdf_cst = { i:{ x:[] for x in range(length_of_data_loader)   } 
-                               for i in range(self.max_epoch) }
-        self.batch_pdf_ce  = { i:{ x:[] for x in range(length_of_data_loader)   } 
-                               for i in range(self.max_epoch) }
+        self.batch_pdf_cst = { i:{ x:[] for x in range(length_of_data_loader)   } for i in range(self.max_epoch) }
+        self.batch_pdf_ce  = { i:{ x:[] for x in range(length_of_data_loader)   } for i in range(self.max_epoch) }
         self.mw_batch_list = [None]*4
 
         self.initial_weight = initial_weight
@@ -828,8 +826,6 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
 
             data_siam = data + (None, None)
             output1, output2, score1, score2 = model(*data_siam)
-            # loss_preprocessing_args = (output1, output2, score1, score2, label1, label2, target)
-            # loss_inputs_cst, loss_inputs_ce1, loss_inputs_ce2, outputs_tuple = loss_input_process(*loss_preprocessing_args)
             outputs = (output1, output2)
             outputs_ce1 = (score1,)
             outputs_ce2 = (score2,)
@@ -847,7 +843,6 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
             if label1 is not None and label2 is not None:
                 loss_inputs_ce1 += (label1,) 
                 loss_inputs_ce2 += (label2,)
-            # (outputs, outputs_ce1, outputs_ce2) = outputs_tuple
             
             ### Put data, target, output into trInst
             assert label1.shape[0] == score1.shape[0], "Label and score dimension should match."
@@ -860,10 +855,6 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
             loss_outputs_ce1, losses_ce1 = loss_fn_ce(*loss_inputs_ce1)
             loss_outputs_ce2, losses_ce2 = loss_fn_ce(*loss_inputs_ce2)
 
-            # loss_outputs, distance, losses_const = loss_fn(*loss_inputs_cst)
-            # loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
-            # val_loss += loss.item()
-            
             losses = [loss_outputs.item(), loss_outputs_ce1.item(), loss_outputs_ce2.item()]
             # val_loss = loss_outputs.item() + loss_outputs_ce1.item() + loss_outputs_ce2.item()
             val_loss += loss_outputs.item() 
@@ -898,16 +889,10 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
                 
                     if epoch == 0:   
                         mix_weight = cp(trInst.prev_weight)
-                        # trInst.prev_weight = trInst.cum_KL_weight
                     else:
                         mix_weight = cp(trInst.prev_weight)
                
-                # print("saving total_samples:", trInst.total_samples) 
-                # print("mix_weight before torch.tensor: ", mix_weight)
-                # print("{}-{} [seed {}] applied weight (mix_weight): {}".format(epoch, batch_idx, trInst.seed, mix_weight))
-                # print("{}-{} [seed {}] Weight actual: w1:{:.4f} ".format(epoch, batch_idx, trInst.seed, wm[0]), "Cumulative: w1:{:.4f} ".format(trInst.cum_MV_weight))
                 print("VAL {}-{} [seed {}] Applied MW: >>[{:.4f}]<< Current KLMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, max_KL_mw), "Cum. KLMW: {:.4f} ".format(trInst.cum_KL_weight))
-                # print("{}-{} [seed {}] Applied MW: {:.4f} Current MVMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, wm[0]), "Cum. MVMW: {:.4f} ".format(trInst.cum_MV_weight))
                 
                 mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu)
                 mix_weight.requires_grad = False
@@ -919,11 +904,6 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
                 target, outputs = target_source[k], output_sources[k]
                 metric_instance.eval_score(outputs, target, distance)
     
-    # trInst.prev_weight = cp(trInst.cum_KL_weight)
-    # ##:# trInst.prev_weight = cp(trInst.cum_MV_weight)
-    # trInst.total_samples = 0
-    # trInst.kl_mw_sum = 0
-    # trInst.mv_mw_sum = 0
 
     return val_loss, ce_loss1, ce_loss2, metric_instances
 

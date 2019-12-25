@@ -83,12 +83,6 @@ test_dataset = MNIST('../data/MNIST', train=False, download=True,
 n_classes = 10
 
 
-# ## Common setup
-
-# In[3]:
-
-
-
 gpu, seed_offset, MVLW = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 
 
@@ -98,8 +92,6 @@ mnist_classes = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
           '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
           '#bcbd22', '#17becf']
-
-
 
 def plot_embeddings(embeddings, targets, xlim=None, ylim=None):
     plt.figure(figsize=(10,10))
