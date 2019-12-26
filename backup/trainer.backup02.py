@@ -123,6 +123,25 @@ def run_epoch_0_task(index_tup, loss_tup, trInst):
     pdf_cst, hist_cst, org_bins_cst = get_pdf(iter_loss_cst, bins=None)
     pdf_ce, hist_ce, org_bins_ce = get_pdf(iter_loss_ce, bins=None)
     
+    
+    # if batch_idx == 0:
+        # KL_val, max_KL_mw, prev_weight = 0, 0.5, 0.5
+        # org_mixed_pdf, mixed_hist_raw, org_mixed_bins = get_weighted_pdfs(iter_loss_cst, iter_loss_ce, mixed_bins=None)
+        
+        # # lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
+        # # org_mixed_pdf, mixed_hist_raw, org_mixed_bins = get_weighted_pdfs(lh_loss_cst, lh_loss_ce, mixed_bins=org_mixed_bins)
+
+    # else:
+        # # print(" -------- Getting stat from prev iter")
+        # # ipdb.set_trace()
+        # if trInst.batch_pdf_cst[epoch][batch_idx-1] != []:
+            # (_, org_hist_cst, org_bins_cst, org_mixed_pdf, org_mixed_bins, (ref_epoch, ref_batch_idx)) = trInst.batch_pdf_cst[epoch][batch_idx-1]
+            # (_, org_hist_ce, org_bins_ce, org_mixed_pdf, org_mixed_bins, (ref_epoch, ref_batch_idx)) = trInst.batch_pdf_ce[epoch][batch_idx-1]
+            
+            # # lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
+            # # org_mixed_pdf, mixed_hist_raw, org_mixed_bins = get_weighted_pdfs(lh_loss_cst, lh_loss_ce, mixed_bins=org_mixed_bins)
+
+            # max_KL_mw, KL_val = get_max_KL_mw(iter_loss_cst, iter_loss_ce, org_mixed_bins, org_mixed_pdf)
     lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
     org_mixed_pdf, lh_hist_raw, org_mixed_bins = get_weighted_pdfs(lh_loss_cst, lh_loss_ce, mixed_bins=None)
     max_KL_mw, KL_val = get_max_KL_mw_lh(iter_loss_cst, iter_loss_ce, org_mixed_bins, org_mixed_pdf)
@@ -419,6 +438,7 @@ class TrInst:
         self.data = None
         self.outputs = None
         self.target = None
+
 
         self.gpu = gpu 
         self.max_epoch = 20
