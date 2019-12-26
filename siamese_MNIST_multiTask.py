@@ -3,14 +3,12 @@
 
 from utils import *
 
-from datasets import SiameseMNIST, SiameseMNIST_MT
-
+from datasets import DatasetTorchvision, SiameseMNIST, SiameseMNIST_MT
 from networks import EmbeddingNet, SiameseNet, SiameseNet_ClassNet
 from losses import ContrastiveLoss
 from losses import ContrastiveLoss_mod, CrossEntropy
 
 import torch
-from torchvision.datasets import MNIST
 from torchvision import transforms
 from torch.optim import lr_scheduler
 import torch.optim as optim
@@ -42,45 +40,22 @@ cuda = torch.cuda.is_available()
 
 ######################################################################
 """
+gpu, seed_offset, ATLW = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 
-mean, std = 0.1307, 0.3081
-
-train_dataset = MNIST('../data/MNIST', train=True, download=True,
-                             transform=transforms.Compose([
-                                 transforms.ToTensor(),
-                                 transforms.Normalize((mean,), (std,))
-                             ]))
-test_dataset = MNIST('../data/MNIST', train=False, download=True,
-                            transform=transforms.Compose([
-                                transforms.ToTensor(),
-                                transforms.Normalize((mean,), (std,))
-                            ]))
-n_classes = 10
-
-
-gpu, seed_offset, MVLW = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+dataC = DatasetTorchvision('MNIST')
+train_dataset, test_dataset, n_classes = dataC.getDataset()
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4"
 
-mnist_classes = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
-          '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
-          '#bcbd22', '#17becf']
-
-# torch.manual_seed(0)
-# np.random.seed(0)
 log_interval = 500
-
-siamese_train_dataset = SiameseMNIST(train_dataset) # Returns pairs of images and target same/different
-siamese_test_dataset = SiameseMNIST(test_dataset)
 
 siamese_MT_train_dataset = SiameseMNIST_MT(train_dataset, seed=0, noisy_label=False) 
 siamese_MT_test_dataset = SiameseMNIST_MT(test_dataset, seed=0, noisy_label=False)
 
 interval = 0.025
-write_list = []
-mw_list = []
+write_list, mw_list = [], []
+
 # For reproducibility
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -88,7 +63,7 @@ torch.backends.cudnn.benchmark = False
 metric_classes=[SimpleSiamDistAcc, AccumulatedAccuracyMetric_mod]
 
 margin = 1.0
-if MVLW: 
+if ATLW: 
     init_mix_weight = 0.5
     n_epochs = 20
     start, interval, end = 0, 1, 1
@@ -103,7 +78,7 @@ else:
 
 for k in range(0, seedmax):
     for mwk, mix_weight in enumerate(np.arange(start, end, interval)):
-        if MVLW:
+        if ATLW:
             mix_weight = init_mix_weight
             print("Mix weight count:", mwk, mix_weight)
 
@@ -139,10 +114,8 @@ for k in range(0, seedmax):
         loss_fn_ce = CrossEntropy()
 
         lr = 1e-3
-        optimizer= optim.Adam(model.parameters(), lr=lr)
-        scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
         optimizer_mt= optim.Adam(model_mt.parameters(), lr=lr)
-        scheduler_mt= lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
+        scheduler_mt= lr_scheduler.StepLR(optimizer_mt, 8, gamma=0.1, last_epoch=-1)
 
         # class AccumulatedAccuracyMetric_mod(Metric):
         loss_fn_tup = (loss_fn, loss_fn_ce)
@@ -152,9 +125,9 @@ for k in range(0, seedmax):
         if cuda:
             model_mt.cuda(gpu)
         
-        model_org_pack = [model, optimizer, optimizer] 
+        model_org_pack = [model, optimizer_mt, optimizer_mt]
         mix_weight = torch.tensor(mix_weight).cuda(gpu)
-        write_var, mix_weight, mix_weight_list = fit_siam(gpu, siamese_train_MT_loader, siamese_test_MT_loader, model_org_pack, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, n_epochs, cuda, log_interval, mix_weight, MVLW, metric_classes=metric_classes, seed=seed)
+        write_var, mix_weight, mix_weight_list = fit_siam(gpu, siamese_train_MT_loader, siamese_test_MT_loader, model_org_pack, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=metric_classes, seed=seed)
 
         write_list.append(write_var)
         mw_list.append(', '.join(mix_weight_list))

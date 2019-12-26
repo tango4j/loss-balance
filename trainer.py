@@ -130,7 +130,7 @@ def run_epoch_0_task(index_tup, loss_tup, trInst):
     trInst.batch_pdf_cst[epoch][batch_idx] = ( pdf_cst, hist_cst, org_bins_cst, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)) )
     trInst.batch_pdf_ce[epoch][batch_idx] = ( pdf_ce, hist_ce, org_bins_ce, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)) )
     
-    save_hist(iter_loss_cst, iter_loss_ce, epoch, batch_idx)
+    # save_hist(iter_loss_cst, iter_loss_ce, epoch, batch_idx)
     
     # batch_hist_list = [batch_pdf_cst, batch_pdf_ce, mw_batch_list, prev_weight]
     var_init_tup =  (max_KL_mw, KL_val)
@@ -475,6 +475,21 @@ def get_min_var_result(loss1, loss2):
     wm = [ wm[0]/sum(wm), wm[1]/sum(wm)]
     return wm 
 
+def print_variables(trInst, max_KL_mw, min_var_mw, mix_weight, epoch, batch_idx, mode):
+    # print("saving total_samples:", trInst.total_samples) 
+    # print("mix_weight before torch.tensor: ", mix_weight)
+    # print("{}-{} [seed {}] applied weight (mix_weight): {}".format(epoch, batch_idx, trInst.trInst.seed, mix_weight))
+    # print("{}-{} [seed {}] Weight actual: w1:{:.4f} ".format(epoch, batch_idx, trInst.seed, wm[0]), "Cumulative: w1:{:.4f} ".format(trInst.cum_MV_weight))
+    if mode == 'train':
+        print("{}-{} [seed {}] Applied MW: {:.4f} Curr. KLMW:{:.4f} Curr. MVMW: {:.4f}".format(epoch, batch_idx, trInst.seed, mix_weight, max_KL_mw, min_var_mw[0]), "Cum. KLMW: {:.4f} MVMW: {:.4f} ".format(trInst.cum_KL_weight, trInst.cum_MV_weight))
+    elif mode == 'test':
+        print("VAL {}-{} [seed {}] Applied MW: >>[{:.4f}]<< Current KLMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, max_KL_mw), "Cum. KLMW: {:.4f} ".format(trInst.cum_KL_weight))
+
+    # print("{}-{} [seed {}] Applied MW: {:.4f} Current MVMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, wm[0]), "Cum. MVMW: {:.4f} ".format(trInst.cum_MV_weight))
+    # print("{}-{} [seed {}] max_KL_mw: {} KL_val: {} KL_mean:{}  cum_KL_weight: {}".format(epoch, batch_idx, trInst.seed, round(max_KL_mw, 4), round(KL_val,4), round(np.mean(KL_cum_list), 4), trInst.cum_KL_weight))
+
+
+
 def loss_input_process(*args):
     output1, output2, score1, score2, label1, label2, target = args
     outputs = (output1, output2)
@@ -497,7 +512,7 @@ def loss_input_process(*args):
     outputs_tuple = (outputs, outputs_ce1, outputs_ce2)
     return loss_inputs_cst, loss_inputs_ce1, loss_inputs_ce2, outputs_tuple
 
-def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, optimizer, scheduler, n_epochs, cuda, log_interval, mix_weight, MVLW, metric_classes=[], seed=0, start_epoch=0):
+def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, optimizer, scheduler, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
     model_org, optimizer_org, scheduler_org = model_org_pack
     for epoch in range(0, start_epoch):
         scheduler.step()
@@ -506,7 +521,7 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
     batch_hist_list = define_vars_for_MW_est(len(train_loader), max_epoch=20, initial_weight=0.5)
     start_epoch = 0
     
-    if MVLW: 
+    if ATLW: 
         mix_weight = 1.0
         mix_weight = 0.5
 
@@ -522,13 +537,13 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
         # Train stage
         np.random.seed(seed)
         print("\nTraining... ")
-        train_loss, vcel1, vcel2, metrics, mix_weight, batch_hist_list, mix_weight_list = train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, MVLW)
+        train_loss, vcel1, vcel2, metrics, mix_weight, batch_hist_list, mix_weight_list = train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW)
         message = '[seed: {} mixw: {:.4f}] Epoch: {}/{}. Train set: Const loss: {:.4f} CE-loss1 {:.4f} CE-loss2 {:.4f}'.format(trInst.seed, mix_weight, epoch + 1, n_epochs, train_loss, vcel1, vcel2)
         for metric in metrics:
             message += '\t{}: {}'.format(metric.name(), metric.value())
 
         print("\nTesting... ")
-        val_loss, vcel1, vcel2, metrics = test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, cuda, metric_classes, trInst, MVLW)
+        val_loss, vcel1, vcel2, metrics = test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, cuda, metric_classes, trInst, ATLW)
         val_loss /= len(val_loader)
 
         message += '\n[seed: {} mixw: {:.4f}] Epoch: {}/{}. Validation set: Const loss: {:.4f} CE-loss1 {:.4f} CE-loss2 {:.4f}'.format(trInst.seed, mix_weight, epoch + 1, n_epochs, val_loss, vcel1, vcel2)
@@ -541,7 +556,7 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
         print(message)
     return write_var, mix_weight, mix_weight_list
 
-def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, MVLW=0):
+def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW=0):
     metric_instances=[]
     for metric_class in metric_classes:
         metric_instance = metric_class()
@@ -623,12 +638,12 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
 
         lcst, lce1, lce2 = (losses_const.detach().cpu().numpy(), losses_ce1.detach().cpu().numpy(), losses_ce2.detach().cpu().numpy()) 
         
-        # MVLW=False
-        if epoch <= 20 and MVLW:
+        # ATLW=False
+        if ATLW:
             iter_loss_cst = lcst
             iter_loss_ce =  lce1 + lce2
 
-            wm =  get_min_var_result(iter_loss_cst, iter_loss_ce)
+            min_var_mw =  get_min_var_result(iter_loss_cst, iter_loss_ce)
             if epoch == 0:
                 trInst, var_init_tup = run_epoch_0_task((epoch, batch_idx), (iter_loss_cst, iter_loss_ce), trInst) 
                 (max_KL_mw, KL_val) = var_init_tup
@@ -636,44 +651,24 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
             else:
                 trInst, var_rest_tup = run_epoch_1_task((epoch, batch_idx), (iter_loss_cst, iter_loss_ce), trInst)
                 (max_KL_mw, KL_val) = var_rest_tup
-            ### decay=epoch for decaying values 
+
             decay = 0 # decay=epoch for decaying values 
-            # decay = 0.3* epoch 
+
             if epoch >= 0 :
-                trInst.mv_mw_sum +=  wm[0] * losses_const.shape[0] * np.exp(-1*decay)
+                trInst.mv_mw_sum +=  min_var_mw[0] * losses_const.shape[0] * np.exp(-1*decay)
                 trInst.kl_mw_sum += max_KL_mw * losses_const.shape[0] * np.exp(-1*decay)
                 trInst.total_samples += losses_const.shape[0] * np.exp(-1*decay)
-                # print("total_samples:", trInst.total_samples, "kl_mw_sum:", trInst.kl_mw_sum)
+
                 trInst.cum_MV_weight = round(float(trInst.mv_mw_sum/trInst.total_samples), 4)
                 trInst.cum_KL_weight = round(float(trInst.kl_mw_sum/trInst.total_samples), 4)
             
                 if epoch == 0:   
-                    # mix_weight = wm[0]
-                    # mix_weight = max_KL_mw
-                    
-                    # mix_weight = cp(trInst.cum_KL_weight)
-                    # trInst.prev_weight = mix_weight
-                    # mix_weight = cp(trInst.prev_weight)
                     mix_weight = cp(trInst.initial_weight)
-                    # mix_weight = cp(trInst.cum_MV_weight)
-                    # trInst.prev_weight = trInst.cum_KL_weight
                 else:
-                # elif epoch <= :
-                    # mix_weight = cp(cum_KL_weight)
-                    # mix_weight = cp(cum_MV_weight)
                     mix_weight = cp(trInst.prev_weight)
-                    # mix_weight = cp(trInst.cum_KL_weight)
-                    # trInst.prev_weight = trInst.cum_KL_weight
-           
-            # print("saving total_samples:", trInst.total_samples) 
-            # print("mix_weight before torch.tensor: ", mix_weight)
-            # print("{}-{} [seed {}] applied weight (mix_weight): {}".format(epoch, batch_idx, trInst.trInst.seed, mix_weight))
-            # print("{}-{} [seed {}] Weight actual: w1:{:.4f} ".format(epoch, batch_idx, trInst.seed, wm[0]), "Cumulative: w1:{:.4f} ".format(trInst.cum_MV_weight))
-            print("{}-{} [seed {}] Applied MW: {:.4f} Curr. KLMW:{:.4f} Curr. MVMW: {:.4f}".format(epoch, batch_idx, trInst.seed, mix_weight, max_KL_mw, wm[0]), "Cum. KLMW: {:.4f} MVMW: {:.4f} ".format(trInst.cum_KL_weight, trInst.cum_MV_weight))
-            # print("{}-{} [seed {}] Applied MW: {:.4f} Current MVMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, wm[0]), "Cum. MVMW: {:.4f} ".format(trInst.cum_MV_weight))
-            
+
+            print_variables(trInst, max_KL_mw, min_var_mw, mix_weight, epoch, batch_idx, mode='train')
             KL_cum_list.append(KL_val)
-            # print("{}-{} [seed {}] max_KL_mw: {} KL_val: {} KL_mean:{}  cum_KL_weight: {}".format(epoch, batch_idx, trInst.seed, round(max_KL_mw, 4), round(KL_val,4), round(np.mean(KL_cum_list), 4), trInst.cum_KL_weight))
        
         # mix_weight = cp(trInst.prev_weight)
         mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu)
@@ -699,24 +694,16 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
 
             # print(message)
             losses = []
-    # batch_hist_list = [batch_pdf_cst, batch_pdf_ce, mw_batch_list, prev_weight]
    
-    # if epoch == 0 and MVLW:
     print("\n===Epoch Level mix weight : w1:{:.4f} w2:{:.4f}".format(mix_weight, (1-mix_weight)))
 
     if 0 <= epoch <= 500:
-        # beta = 1 - (0.5) ** (epoch-2)
-        # trInst.prev_weight = beta * mix_weight + (1-beta) * cp(trInst.cum_KL_weight)
-        
-        beta = (0.75) ** (epoch)
-        beta = 1
         delta_w = torch.abs(trInst.cum_KL_weight - mix_weight)
         sign_delta_w = torch.sign(trInst.cum_KL_weight - mix_weight)
-        trInst.prev_weight = mix_weight + sign_delta_w * delta_w * beta
+        trInst.prev_weight = mix_weight + sign_delta_w * delta_w 
         print("delta_w:{:.4f} sign: {:.4f}".format(delta_w, sign_delta_w))
-        print("====== mix_weight: {:.4f} beta: {:.4f} trInst.cum_KL_weight: {:.4f} result prev_weight: {:.4f}".format(mix_weight, beta, trInst.cum_KL_weight, trInst.prev_weight))
-        # trInst.prev_weight = cp(trInst.cum_KL_weight) 
-    # trInst.prev_weight = cp(trInst.cum_MV_weight)
+        print("====== mix_weight: {:.4f} trInst.cum_KL_weight: {:.4f} result prev_weight: {:.4f}".format(mix_weight, trInst.cum_KL_weight, trInst.prev_weight))
+    
     trInst.total_samples = 0
     trInst.kl_mw_sum = 0
     trInst.mv_mw_sum = 0
@@ -777,7 +764,7 @@ def test_epoch(val_loader, model, loss_fn, cuda, metric_classes):
     return val_loss, metric_instances
 
 
-def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, cuda, metric_classes, trInst, MVLW):
+def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, cuda, metric_classes, trInst, ATLW):
     with torch.no_grad():
         metric_instances=[]
         for metric_class in metric_classes:
@@ -787,10 +774,9 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
         model_org, optimizer_org, scheduler_org = model_org_pack
         
         model.eval()
-        val_loss = 0
         
         losses = []
-        total_loss, ce_loss1, ce_loss2= 0, 0, 0
+        val_loss, total_loss, ce_loss1, ce_loss2= 0, 0, 0, 0
         
         loss_list=[ [], [] ]
         
@@ -827,7 +813,6 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
             if label1 is not None and label2 is not None:
                 loss_inputs_ce1 += (label1,) 
                 loss_inputs_ce2 += (label2,)
-            # (outputs, outputs_ce1, outputs_ce2) = outputs_tuple
             
             ### Put data, target, output into trInst
             assert label1.shape[0] == score1.shape[0], "Label and score dimension should match."
@@ -840,12 +825,8 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
             loss_outputs_ce1, losses_ce1 = loss_fn_ce(*loss_inputs_ce1)
             loss_outputs_ce2, losses_ce2 = loss_fn_ce(*loss_inputs_ce2)
 
-            # loss_outputs, distance, losses_const = loss_fn(*loss_inputs_cst)
-            # loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
-            # val_loss += loss.item()
-            
             losses = [loss_outputs.item(), loss_outputs_ce1.item(), loss_outputs_ce2.item()]
-            # val_loss = loss_outputs.item() + loss_outputs_ce1.item() + loss_outputs_ce2.item()
+
             val_loss += loss_outputs.item() 
             ce_loss1 = loss_outputs_ce1.item() 
             ce_loss2 = loss_outputs_ce2.item()
@@ -853,12 +834,12 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
             ### Loss processing 
             lcst, lce1, lce2 = (losses_const.detach().cpu().numpy(), losses_ce1.detach().cpu().numpy(), losses_ce2.detach().cpu().numpy()) 
             
-            MVLW = False
-            if epoch <= 20 and MVLW:
+            ATLW = False
+            if ATLW:
                 iter_loss_cst = lcst
                 iter_loss_ce =  lce1 + lce2
 
-                wm =  get_min_var_result(iter_loss_cst, iter_loss_ce)
+                min_var_mw =  get_min_var_result(iter_loss_cst, iter_loss_ce)
                 if epoch == 0:
                     trInst, var_init_tup = run_epoch_0_task((epoch, batch_idx), (iter_loss_cst, iter_loss_ce), trInst) 
                     (max_KL_mw, KL_val) = var_init_tup
@@ -869,10 +850,10 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
                 decay = 0 # decay=epoch for decaying values 
 
                 if epoch >= 0 :
-                    trInst.mv_mw_sum +=  wm[0] * losses_const.shape[0] * np.exp(-1*decay)
+                    trInst.mv_mw_sum +=  min_var_mw[0] * losses_const.shape[0] * np.exp(-1*decay)
                     trInst.kl_mw_sum += max_KL_mw * losses_const.shape[0] * np.exp(-1*decay)
                     trInst.total_samples += losses_const.shape[0] * np.exp(-1*decay)
-                    # print("total_samples:", trInst.total_samples, "kl_mw_sum:", trInst.kl_mw_sum)
+
                     trInst.cum_MV_weight = round(float(trInst.mv_mw_sum/trInst.total_samples), 4)
                     trInst.cum_KL_weight = round(float(trInst.kl_mw_sum/trInst.total_samples), 4)
                 
@@ -881,13 +862,7 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
                         # trInst.prev_weight = trInst.cum_KL_weight
                     else:
                         mix_weight = cp(trInst.prev_weight)
-               
-                # print("saving total_samples:", trInst.total_samples) 
-                # print("mix_weight before torch.tensor: ", mix_weight)
-                # print("{}-{} [seed {}] applied weight (mix_weight): {}".format(epoch, batch_idx, trInst.seed, mix_weight))
-                # print("{}-{} [seed {}] Weight actual: w1:{:.4f} ".format(epoch, batch_idx, trInst.seed, wm[0]), "Cumulative: w1:{:.4f} ".format(trInst.cum_MV_weight))
-                print("VAL {}-{} [seed {}] Applied MW: >>[{:.4f}]<< Current KLMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, max_KL_mw), "Cum. KLMW: {:.4f} ".format(trInst.cum_KL_weight))
-                # print("{}-{} [seed {}] Applied MW: {:.4f} Current MVMW:{:.4f} ".format(epoch, batch_idx, trInst.seed, mix_weight, wm[0]), "Cum. MVMW: {:.4f} ".format(trInst.cum_MV_weight))
+                print_variables(trInst, max_KL_mw, min_var_mw, mix_weight, epoch, batch_idx, mode='test')
                 
                 mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu)
                 mix_weight.requires_grad = False
@@ -936,7 +911,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         message += '\nEpoch: {}/{}. Validation set: Average loss: {:.4f}'.format(epoch + 1, n_epochs,
                                                                                  val_loss)
         for metric in metrics:
-            message += ' {}: {}'.format(metric.name(), metric.value())
+            message += ' {}: {:.4f}'.format(metric.name(), metric.value())
 
         print(message)
 
@@ -962,7 +937,7 @@ def fit_org(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_ep
 
         message = 'Epoch: {}/{}. Train set: Average loss: {:.4f}'.format(epoch + 1, n_epochs, train_loss)
         for metric in metrics:
-            message += '{}: {}'.format(metric.name(), metric.value())
+            message += ' {}: {:.4f}'.format(metric.name(), metric.value())
         
         val_loss, metrics = test_epoch(val_loader, model, loss_fn, cuda, metric_classes)
         val_loss /= len(val_loader)
@@ -970,7 +945,7 @@ def fit_org(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_ep
         message += '\nEpoch: {}/{}. Validation set: Average loss: {:.4f}'.format(epoch + 1, n_epochs,
                                                                                  val_loss)
         for metric in metrics:
-            message += ' {}: {}'.format(metric.name(), metric.value())
+            message += ' {}: {:.4f}'.format(metric.name(), metric.value())
 
         print(message)
 
@@ -1010,8 +985,6 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
             target = (target,)
             loss_inputs += target
 
-        # loss_outputs = loss_fn(*loss_inputs)
-        # ipdb.set_trace()
         if loss_fn.__class__.__name__ == 'CrossEntropy':
             loss_mean, loss_outputs = loss_fn(*loss_inputs)
             loss, distance = loss_mean, None
@@ -1024,8 +997,8 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
 
         loss.backward()
         optimizer.step()
-        # target_source = [target, (label1,)]
-        # output_sources = [outputs, outputs_ce1]
+
+
         for k, metric_instance in enumerate(metric_instances):
             met_target, met_outputs = target, outputs
             metric_instance.eval_score(met_outputs, met_target, distance)
@@ -1036,16 +1009,6 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
                 100. * batch_idx / len(train_loader), np.mean(losses))
             for metric in metric_instances:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
-
-        # for metric in metrics:
-            # metric(outputs, target, loss_outputs)
-
-        # if batch_idx % log_interval == 0:
-            # message = 'Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                # batch_idx * len(data[0]), len(train_loader.dataset),
-                # 100. * batch_idx / len(train_loader), np.mean(losses))
-            # for metric in metrics:
-                # message += '\t{}: {}'.format(metric.name(), metric.value())
 
             print(message)
             losses = []

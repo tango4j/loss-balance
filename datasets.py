@@ -7,11 +7,61 @@ from torch.utils.data.sampler import BatchSampler
 import ipdb
 import copy
 import random
+import os
+
+from torchvision import transforms
+from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
 
 def get_noisylabel(label, n_classes):
     lin = np.arange(0, n_classes) 
     noisy_label  = random.choice(np.delete(lin, label))
     return noisy_label
+
+
+class DatasetTorchvision(object):
+    def __init__(self, dataset_name):
+        self.dataset_name = dataset_name
+        self.colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+                       '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
+                       '#bcbd22', '#17becf']
+        
+        self.stat_dict = {'MNIST': {'mean':0.1307, 'std':0.3081},
+                   'FashoinMNIST': {'mean':0.28604059698879553, 'std':0.35302424451492237},
+                        'CIFAR10': {'mean':0.25, 'std':0.35},
+                       'CIFAR100': {'mean':0.25, 'std':0.35} 
+                    }
+        self.num_classes_dict = {'MNIST':10,
+                                 'FashionMNIST':10, 
+                                 'CIFAR10':10,
+                                 'CIFAR100':100
+                                 } 
+        self.data_classes = [ str(x) for x in range(self.num_classes_dict[self.dataset_name]) ]
+        
+        self.MNIST = MNIST
+        self.FashionMNIST = FashionMNIST
+        self.CIFAR10 = CIFAR10
+        self.CIFAR100 = CIFAR100
+
+        
+    def getDataset(self):
+           
+        self.mean, self.std = self.stat_dict[self.dataset_name]['mean'], self.stat_dict[self.dataset_name]['std']
+        self.n_classes = self.num_classes_dict[self.dataset_name]
+        self.data_folder = '../data/{}'.format(self.dataset_name)
+
+        self.train_dataset = getattr(self, self.dataset_name)(self.data_folder,
+                                     train=True, download=True,
+                                     transform=transforms.Compose([
+                                         transforms.ToTensor(),
+                                         transforms.Normalize((self.mean,), (self.std,))
+                                     ]))
+        self.test_dataset = getattr(self, self.dataset_name)(self.data_folder,
+                                    train=False, download=True,
+                                    transform=transforms.Compose([
+                                        transforms.ToTensor(),
+                                        transforms.Normalize((self.mean,), (self.std,))
+                                    ]))
+        return self.train_dataset, self.test_dataset, self.n_classes
 
 class SiameseMNIST_MT(Dataset):
     """
