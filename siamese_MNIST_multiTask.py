@@ -52,6 +52,13 @@ log_interval = 500
 
 siamese_MT_train_dataset = SiameseMNIST_MT(train_dataset, seed=0, noisy_label=False) 
 siamese_MT_test_dataset = SiameseMNIST_MT(test_dataset, seed=0, noisy_label=False)
+        
+# Step 4
+margin=1.0
+loss_fn = ContrastiveLoss_mod(margin)
+loss_fn_ce = CrossEntropy()
+loss_fn_tup = (loss_fn, loss_fn_ce)
+
 
 interval = 0.025
 write_list, mw_list = [], []
@@ -62,7 +69,6 @@ torch.backends.cudnn.benchmark = False
 
 metric_classes=[SimpleSiamDistAcc, AccumulatedAccuracyMetric_mod]
 
-margin = 1.0
 if ATLW: 
     init_mix_weight = 0.5
     n_epochs = 20
@@ -70,7 +76,7 @@ if ATLW:
     seedmax = 50
     log_tag = "auto"
 else:
-    start = 0.75
+    start = 0.5
     start, interval, end = start, 0.25, start + interval
     seedmax = 1
     n_epochs = 20
@@ -89,7 +95,6 @@ for k in range(0, seedmax):
         torch.manual_seed(seed)
         np.random.seed(seed)
         # mix_weight = 0.5  ### initial weight
-        exp_tag = "margin{}_seedoffset_{}_epoch_{}_intvl{}".format(margin, seed_offset, n_epochs, interval)
 
         batch_size = 2**12
         # batch_size = 128
@@ -100,38 +105,30 @@ for k in range(0, seedmax):
         
         # Step 2
         embedding_net = EmbeddingNet()
+        model_mt = SiameseNet_ClassNet(embedding_net, n_classes=n_classes)
         
         # Step 3
-        model = SiameseNet(embedding_net)
-        model_mt = SiameseNet_ClassNet(embedding_net, n_classes=n_classes)
         if cuda:
-            model.cuda(gpu)
+            # model.cuda(gpu)
             model_mt.cuda(gpu)
             
-        # Step 4
-        # loss_fn = ContrastiveLoss(margin)
-        loss_fn = ContrastiveLoss_mod(margin)
-        loss_fn_ce = CrossEntropy()
-
         lr = 1e-3
         optimizer_mt= optim.Adam(model_mt.parameters(), lr=lr)
         scheduler_mt= lr_scheduler.StepLR(optimizer_mt, 8, gamma=0.1, last_epoch=-1)
 
-        # class AccumulatedAccuracyMetric_mod(Metric):
-        loss_fn_tup = (loss_fn, loss_fn_ce)
 
         # for Siamese + Classifier net
-        model_mt = SiameseNet_ClassNet(embedding_net, n_classes=n_classes)
         if cuda:
             model_mt.cuda(gpu)
         
-        model_org_pack = [model, optimizer_mt, optimizer_mt]
+        model_org_pack = [model_mt, optimizer_mt, optimizer_mt]
         mix_weight = torch.tensor(mix_weight).cuda(gpu)
         write_var, mix_weight, mix_weight_list = fit_siam(gpu, siamese_train_MT_loader, siamese_test_MT_loader, model_org_pack, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=metric_classes, seed=seed)
 
         write_list.append(write_var)
         mw_list.append(', '.join(mix_weight_list))
-
+        
+        exp_tag = getSaveTag(margin, seed_offset, n_epochs, interval)
         write_txt("log_{}/{}.txt".format(log_tag, exp_tag), write_list)
 
         print("write var:", write_var)

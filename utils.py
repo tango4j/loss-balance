@@ -4,6 +4,9 @@ import numpy as np
 import torch
 gpu = 3
 
+def getSaveTag(margin, seed_offset, n_epochs, interval):
+    return "margin{}_seedoffset_{}_epoch_{}_intvl{}".format(margin, seed_offset, n_epochs, interval)
+
 
 def write_txt(w_path, list_to_wr):
     with open(w_path, "w") as output:

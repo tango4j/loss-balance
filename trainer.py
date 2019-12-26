@@ -489,7 +489,6 @@ def print_variables(trInst, max_KL_mw, min_var_mw, mix_weight, epoch, batch_idx,
     # print("{}-{} [seed {}] max_KL_mw: {} KL_val: {} KL_mean:{}  cum_KL_weight: {}".format(epoch, batch_idx, trInst.seed, round(max_KL_mw, 4), round(KL_val,4), round(np.mean(KL_cum_list), 4), trInst.cum_KL_weight))
 
 
-
 def loss_input_process(*args):
     output1, output2, score1, score2, label1, label2, target = args
     outputs = (output1, output2)
@@ -513,10 +512,10 @@ def loss_input_process(*args):
     return loss_inputs_cst, loss_inputs_ce1, loss_inputs_ce2, outputs_tuple
 
 def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, optimizer, scheduler, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
-    model_org, optimizer_org, scheduler_org = model_org_pack
+    # model_org, optimizer_org, scheduler_org = model_org_pack
     for epoch in range(0, start_epoch):
         scheduler.step()
-        scheduler_org.step()
+        # scheduler_org.step()
    
     batch_hist_list = define_vars_for_MW_est(len(train_loader), max_epoch=20, initial_weight=0.5)
     start_epoch = 0
@@ -532,7 +531,6 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
                     initial_weight=mix_weight)
     for epoch in range(start_epoch, n_epochs):
         scheduler.step()
-        scheduler_org.step()
         
         # Train stage
         np.random.seed(seed)
@@ -563,8 +561,8 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
         metric_instances.append(metric_instance)
 
 
-    model_org, optimizer_org, scheduler_org = model_org_pack
-    model_org.train()
+    # model_org, optimizer_org, scheduler_org = model_org_pack
+    # model_org.train()
     model.train()
     losses = []
     total_loss, ce_loss1, ce_loss2= 0, 0, 0
@@ -575,8 +573,6 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
     org_mixed_bins, org_mixed_bins = [], []
     for batch_idx, (data, target, label1, label2) in enumerate(train_loader):
         
-        # ipdb.set_trace()
-        # print("label1", label1, "label2", label2)
         iter_loss_list = [ [], [] ]
         target = target if len(target) > 0 else None
         if not type(data) in (tuple, list):
@@ -591,11 +587,11 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
                 mix_weight.requires_grad = False
 
 
-        optimizer_org.zero_grad()
+        # optimizer_org.zero_grad()
         optimizer.zero_grad()
         data_siam = data + (None, None)
         output1, output2, score1, score2 = model(*data_siam)
-        output1, output2 = model_org(*data)
+        # output1, output2 = model_org(*data)
         # for param_group in optimizer.param_groups:
             # print("============ LEARNING RATE:", param_group["step_size"])
         
@@ -671,7 +667,7 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
             KL_cum_list.append(KL_val)
        
         # mix_weight = cp(trInst.prev_weight)
-        mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu)
+        mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu).detach()
         mix_weight.requires_grad = False
         loss_mt = torch.mul(mix_weight, loss_outputs) + torch.mul(1-mix_weight, 1.0*(loss_outputs_ce1 +  loss_outputs_ce2))
         # loss_mt = loss_outputs
