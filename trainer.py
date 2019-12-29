@@ -229,7 +229,7 @@ def get_lookahead_pdfs(index_tup, loss_tup, trInst):
         (loss_fn, loss_fn_ce) = trInst.loss_fn_tup
         (outraw1, outraw2) = trInst.outputs
         lh = trInst.margin_LH
-        lh = torch.tensor(lh).cuda(trInst.gpu)
+        lh = torch.tensor(lh).cuda()
         label1, label2 = trInst.label1, trInst.label2
         target = trInst.target
         target_float = trInst.target.float()
@@ -412,7 +412,7 @@ def define_vars_for_MW_est(length_of_data_loader, max_epoch=20, initial_weight=0
     return batch_hist_list
 
 class TrInst:
-    def __init__(self,gpu, seed, loss_fn_tup, length_of_data_loader, initial_weight):
+    def __init__(self,seed, loss_fn_tup, length_of_data_loader, initial_weight):
         self.seed = seed
        
         self.model = None
@@ -511,7 +511,7 @@ def loss_input_process(*args):
     outputs_tuple = (outputs, outputs_ce1, outputs_ce2)
     return loss_inputs_cst, loss_inputs_ce1, loss_inputs_ce2, outputs_tuple
 
-def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, optimizer, scheduler, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
+def fit_siam(train_loader, val_loader, model, loss_fn_tup, optimizer, scheduler, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
     # model_org, optimizer_org, scheduler_org = model_org_pack
     for epoch in range(0, start_epoch):
         scheduler.step()
@@ -524,8 +524,7 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
         mix_weight = 1.0
         mix_weight = 0.5
 
-    trInst = TrInst(gpu=gpu, 
-                    seed=seed, 
+    trInst = TrInst(seed=seed, 
                     loss_fn_tup=loss_fn_tup,
                     length_of_data_loader=len(train_loader),
                     initial_weight=mix_weight)
@@ -535,13 +534,13 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
         # Train stage
         np.random.seed(seed)
         print("\nTraining... ")
-        train_loss, vcel1, vcel2, metrics, mix_weight, batch_hist_list, mix_weight_list = train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW)
+        train_loss, vcel1, vcel2, metrics, mix_weight, batch_hist_list, mix_weight_list = train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW)
         message = '[seed: {} mixw: {:.4f}] Epoch: {}/{}. Train set: Const loss: {:.4f} CE-loss1 {:.4f} CE-loss2 {:.4f}'.format(trInst.seed, mix_weight, epoch + 1, n_epochs, train_loss, vcel1, vcel2)
         for metric in metrics:
             message += '\t{}: {}'.format(metric.name(), metric.value())
 
         print("\nTesting... ")
-        val_loss, vcel1, vcel2, metrics = test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, cuda, metric_classes, trInst, ATLW)
+        val_loss, vcel1, vcel2, metrics = test_siam_epoch(val_loader, epoch, model, loss_fn_tup, cuda, metric_classes, trInst, ATLW)
         val_loss /= len(val_loader)
 
         message += '\n[seed: {} mixw: {:.4f}] Epoch: {}/{}. Validation set: Const loss: {:.4f} CE-loss1 {:.4f} CE-loss2 {:.4f}'.format(trInst.seed, mix_weight, epoch + 1, n_epochs, val_loss, vcel1, vcel2)
@@ -554,7 +553,7 @@ def fit_siam(gpu, train_loader, val_loader, model_org_pack, model, loss_fn_tup, 
         print(message)
     return write_var, mix_weight, mix_weight_list
 
-def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW=0):
+def train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW=0):
     metric_instances=[]
     for metric_class in metric_classes:
         metric_instance = metric_class()
@@ -578,12 +577,12 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
         if not type(data) in (tuple, list):
             data = (data,)
         if cuda:
-            data = tuple(d.cuda(trInst.gpu) for d in data)
+            data = tuple(d.cuda() for d in data)
             if target is not None:
-                target = target.cuda(trInst.gpu)
-                label1 = label1.cuda(trInst.gpu)
-                label2 = label2.cuda(trInst.gpu)
-                mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu)
+                target = target.cuda()
+                label1 = label1.cuda()
+                label2 = label2.cuda()
+                mix_weight = torch.tensor(mix_weight).cuda()
                 mix_weight.requires_grad = False
 
 
@@ -667,7 +666,7 @@ def train_siam_epoch(gpu, train_loader, epoch, model_org_pack, model, loss_fn_tu
             KL_cum_list.append(KL_val)
        
         # mix_weight = cp(trInst.prev_weight)
-        mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu).detach()
+        mix_weight = torch.tensor(mix_weight).cuda().detach()
         mix_weight.requires_grad = False
         loss_mt = torch.mul(mix_weight, loss_outputs) + torch.mul(1-mix_weight, 1.0*(loss_outputs_ce1 +  loss_outputs_ce2))
         # loss_mt = loss_outputs
@@ -727,9 +726,9 @@ def test_epoch(val_loader, model, loss_fn, cuda, metric_classes):
             if not type(data) in (tuple, list):
                 data = (data,)
             if cuda:
-                data = tuple(d.cuda(gpu) for d in data)
+                data = tuple(d.cuda() for d in data)
                 if target is not None:
-                    target = target.cuda(gpu)
+                    target = target.cuda()
 
             outputs = model(*data)
 
@@ -754,20 +753,17 @@ def test_epoch(val_loader, model, loss_fn, cuda, metric_classes):
 
             val_loss += loss.item()
 
-            # for metric in metrics:
-                # metric(outputs, target, loss_outputs)
-
     return val_loss, metric_instances
 
 
-def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, cuda, metric_classes, trInst, ATLW):
+def test_siam_epoch(val_loader, epoch, model, loss_fn_tup, cuda, metric_classes, trInst, ATLW):
     with torch.no_grad():
         metric_instances=[]
         for metric_class in metric_classes:
             metric_instance = metric_class()
             metric_instances.append(metric_instance)
 
-        model_org, optimizer_org, scheduler_org = model_org_pack
+        # model_org, optimizer_org, scheduler_org = model_org_pack
         
         model.eval()
         
@@ -782,11 +778,11 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
             if not type(data) in (tuple, list):
                 data = (data,)
             if cuda:
-                data = tuple(d.cuda(trInst.gpu) for d in data)
+                data = tuple(d.cuda() for d in data)
                 if target is not None:
-                    target = target.cuda(trInst.gpu)
-                    label1 = label1.cuda(trInst.gpu)
-                    label2 = label2.cuda(trInst.gpu)
+                    target = target.cuda()
+                    label1 = label1.cuda()
+                    label2 = label2.cuda()
 
             data_siam = data + (None, None)
             output1, output2, score1, score2 = model(*data_siam)
@@ -860,7 +856,7 @@ def test_siam_epoch(gpu, val_loader, epoch, model_org_pack, model, loss_fn_tup, 
                         mix_weight = cp(trInst.prev_weight)
                 print_variables(trInst, max_KL_mw, min_var_mw, mix_weight, epoch, batch_idx, mode='test')
                 
-                mix_weight = torch.tensor(mix_weight).cuda(trInst.gpu)
+                mix_weight = torch.tensor(mix_weight).cuda()
                 mix_weight.requires_grad = False
                 KL_cum_list.append(KL_val)
 
@@ -965,9 +961,9 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         if not type(data) in (tuple, list):
             data = (data,)
         if cuda:
-            data = tuple(d.cuda(gpu) for d in data)
+            data = tuple(d.cuda() for d in data)
             if target is not None:
-                target = target.cuda(gpu)
+                target = target.cuda()
 
 
         optimizer.zero_grad()
