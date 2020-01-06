@@ -41,7 +41,7 @@ cuda = torch.cuda.is_available()
 ######################################################################
 """
 
-def writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, exp_tag, write_list):
+def writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, write_list):
     write_list.append(write_var)
     mw_list.append(', '.join(mix_weight_list))
     
@@ -51,7 +51,7 @@ def writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, inte
     print("write var:", write_var)
     return write_list, mw_list
             
-gpu, seed_offset, ATLW = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+seed_offset, ATLW = int(sys.argv[1]), str(sys.argv[2])
 
 dataC = DatasetTorchvision('MNIST')
 train_dataset, test_dataset, n_classes = dataC.getDataset()
@@ -83,18 +83,25 @@ torch.backends.cudnn.benchmark = False
 
 metric_classes=[SimpleSiamDistAcc, AccumulatedAccuracyMetric_mod]
 
-if ATLW: 
+if ATLW   == 'na': # No automatic loss weight tuning: Grid search
+    start = 0.5
+    n_epochs = 20
+    start, interval, end = start, 0.25, start + interval
+    seedmax = 1
+    log_tag = "grid_search"
+elif ATLW == 'kl': # KLMW and MVMW
     init_mix_weight = 0.5
     n_epochs = 2
     start, interval, end = 0, 1, 1
     seedmax = 50
     log_tag = "auto"
-else:
-    start = 0.5
-    start, interval, end = start, 0.25, start + interval
-    seedmax = 1
+elif ATLW == 'gn': # GradNorm method
+    init_mix_weight = 0.5
     n_epochs = 20
-    log_tag = "gridsearch"
+    start, interval, end = 0, 1, 1
+    seedmax = 50
+    log_tag = "gradnorm"
+
 
 for k in range(0, seedmax):
     for mwk, mix_weight in enumerate(np.arange(start, end, interval)):
@@ -120,12 +127,12 @@ for k in range(0, seedmax):
         if cuda:
             model_mt.cuda()
             
-        lr = 1e-3
-        optimizer_mt= optim.Adam(model_mt.parameters(), lr=lr)
-        scheduler_mt= lr_scheduler.StepLR(optimizer_mt, 8, gamma=0.1, last_epoch=-1)
+        optimizer_mt = optim.Adam
+        scheduler_mt = None
         
-        model_org_pack = [model_mt, optimizer_mt, optimizer_mt]
         mix_weight = torch.tensor(mix_weight).cuda()
         write_var, mix_weight, mix_weight_list = fit_siam(siamese_train_MT_loader, siamese_test_MT_loader, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=metric_classes, seed=seed)
 
-        write_list, mw_list = writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, exp_tag, write_list)
+        write_list, mw_list = writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, write_list)
+
+

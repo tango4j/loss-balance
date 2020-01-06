@@ -80,16 +80,17 @@ class SiameseNet_ClassNet(nn.Module):
         # self.fc2 = nn.Linear(2, n_classes)
 
     def forward(self, x1, x2, outraw1, outraw2):
+        '''
+        Outraw is for making embedding outlook
+        '''
         if type(outraw1) == type(None):
             outraw1 = self.embedding_net(x1)
-        # output1 = self.nonlinear(outraw1)
         # scores1 = F.log_softmax(self.fc1(output1), dim=-1)
         output1 = self.nonlinear(outraw1)
         scores1 = F.log_softmax(self.fc1(output1), dim=-1)
        
         if type(outraw2) == type(None):
             outraw2= self.embedding_net(x2)
-        # output2 = self.nonlinear(outraw2)
         # scores2 = F.log_softmax(self.fc2(output2), dim=-1)
         output2  = self.nonlinear(outraw2)
         scores2 = F.log_softmax(self.fc1(output2), dim=-1)
