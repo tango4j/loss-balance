@@ -767,7 +767,7 @@ def train_siam_gn_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda
             # zero the w_i(t) gradients since we want to update the weights using gradnorm loss
             # if trInst.loss_weights.grad != None:
                 # trInst.loss_weights.grad = 0.0 * trInst.loss_weights.data
-            trInst.loss_weights.grad = 0.0 * trInst.loss_weights.grad
+            # trInst.loss_weights.grad = 0.0 * trInst.loss_weights.grad
 
             W = list(trInst.model.parameters())
             G_w_t_L2norm_list = []
