@@ -269,9 +269,10 @@ def get_lookahead_pdfs(index_tup, loss_tup, trInst):
         label1, label2 = trInst.label1, trInst.label2
         target = trInst.target
         target_float = trInst.target.float()
-        target_rep = target_float.repeat(2, 1).t()
+        target_rep = target_float.repeat(trInst.embd_size, 1).t()
 
         outraw_mean = 0.5 * (outraw1 + outraw2)
+        # ipdb.set_trace()
         outraw1_lh = target_rep * (lh*outraw_mean + (1-lh)*outraw1) + \
             (1-target_rep)*(outraw1 + lh*(outraw1-outraw_mean))
         outraw2_lh = target_rep * (lh*outraw_mean + (1-lh)*outraw2) + \
@@ -459,7 +460,7 @@ def get_max_KL_mw_from_list_and_lh(loss1, loss2, ref_mixed_bins, ref_mixed_pdf_f
     return max_KL_mw, KL_val
 
 
-def define_vars_for_MW_est(length_of_data_loader, max_epoch=20, initial_weight=0.5):
+def define_vars_for_MW_est(length_of_data_loader, max_epoch=500, initial_weight=0.5):
     batch_pdf_cst = {i: {x: [] for x in range(
         length_of_data_loader)} for i in range(max_epoch)}
     batch_pdf_ce = {i: {x: [] for x in range(
@@ -489,7 +490,7 @@ class GNInst:
         self.T = T
 
 class KLInst:
-    def __init__(self, seed, loss_fn_tup, length_of_data_loader, initial_weight):
+    def __init__(self, seed, loss_fn_tup, length_of_data_loader, initial_weight, embd_size):
         self.seed = seed
 
         self.model = None
@@ -523,7 +524,7 @@ class KLInst:
 
         self.margin_LH = 0.01
 
-
+        self.embd_size = embd_size
 '''
 Minimum Variance Method
 
@@ -598,30 +599,30 @@ def loss_input_process(*args):
     return loss_inputs_cst, loss_inputs_ce1, loss_inputs_ce2, outputs_tuple
 
 
-def fit_siam(train_loader, val_loader, model, loss_fn_tup, optimizer_func, scheduler, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
-    # for epoch in range(0, start_epoch):
-        # scheduler.step()
+def fit_siam(train_loader, val_loader, model, loss_fn_tup, optimizer_func, scheduler, embd_size, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
 
     batch_hist_list = define_vars_for_MW_est(
-        len(train_loader), max_epoch=20, initial_weight=0.5)
+        len(train_loader), max_epoch=n_epochs, initial_weight=0.5)
     start_epoch = 0
 
     # Variable setup.
     if ATLW != 'na':
         mix_weight = 0.5
 
-    if ATLW == 'kl':
+    if ATLW in ['kl', 'na']:
         trInst = KLInst(seed=seed,
                         loss_fn_tup=loss_fn_tup,
                         length_of_data_loader=len(train_loader),
-                        initial_weight=mix_weight)
+                        initial_weight=mix_weight, 
+                        embd_size=embd_size)
         train_function = train_siam_epoch
         optimizer = optimizer_func(model.parameters(), lr=1e-3)
 
     elif ATLW == 'gn':
+        T, alpha=1, 1.5
         trInst = GNInst(seed=seed,
                         loss_fn_tup=loss_fn_tup,
-                        alpha=0.5, T=1)
+                        alpha=1.5, T=T)
         train_function = train_siam_gn_epoch
         if cuda:
             trInst.loss_weights = trInst.loss_weights.cuda()
@@ -630,13 +631,12 @@ def fit_siam(train_loader, val_loader, model, loss_fn_tup, optimizer_func, sched
         optimizer_W = torch.optim.Adam(
             [*model.parameters()], lr=1e-3)
         optimizer_gn = torch.optim.Adam(
-            [trInst.loss_weights], lr=1e-3)
+            [trInst.loss_weights], lr=1e-2)
         optimizer = (optimizer_W, optimizer_gn)
 
     # Training loop.
     for epoch in range(start_epoch, n_epochs):
         # scheduler.step()
-        train_function = train_siam_gn_epoch
 
         # Train stage
         np.random.seed(seed)
@@ -749,11 +749,9 @@ def train_siam_gn_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda
             task_losses = [iter_loss_cst, iter_loss_ce]
             task_losses = torch.stack(task_losses)
 
-            # ipdb.set_trace()
-
             # get the sum of weighted losses
-            # ipdb.set_trace()
             weighted_losses = trInst.loss_weights * task_losses
+            
             total_weighted_loss = weighted_losses.sum()
 
             optimizer_W.zero_grad()
@@ -767,7 +765,7 @@ def train_siam_gn_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda
             # zero the w_i(t) gradients since we want to update the weights using gradnorm loss
             # if trInst.loss_weights.grad != None:
                 # trInst.loss_weights.grad = 0.0 * trInst.loss_weights.data
-            # trInst.loss_weights.grad = 0.0 * trInst.loss_weights.grad
+            trInst.loss_weights.grad = 0.0 * trInst.loss_weights.grad
 
             W = list(trInst.model.parameters())
             G_w_t_L2norm_list = []
@@ -797,6 +795,7 @@ def train_siam_gn_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda
                 # inverse training rate r(t)
                 r_t = curl_L_i_t / curl_L_i_t.mean()
 
+                # Constant term 
                 constant_term = bar_G_w_t * (r_t ** trInst.alpha)
 
             # write out the gradnorm loss L_grad and set the weight gradients
@@ -818,6 +817,7 @@ def train_siam_gn_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda
         mix_weight = trInst.loss_weights.detach().cpu().numpy()[0]
         target_source = [target, (label1,)]
         output_sources = [outputs, outputs_ce1]
+
         for k, metric_instance in enumerate(metric_instances):
             met_target, met_outputs = target_source[k], output_sources[k]
             metric_instance.eval_score(met_outputs, met_target, distance)
@@ -861,6 +861,7 @@ def train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, l
     KL_cum_list = []
     org_mixed_bins, org_mixed_bins = [], []
     for batch_idx, (data, target, label1, label2) in enumerate(train_loader):
+        # ipdb.set_trace()
 
         iter_loss_list = [[], []]
         target = target if len(target) > 0 else None

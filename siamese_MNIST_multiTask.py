@@ -4,7 +4,7 @@
 from utils import *
 
 from datasets import DatasetTorchvision, SiameseMNIST, SiameseMNIST_MT
-from networks import EmbeddingNet, SiameseNet, SiameseNet_ClassNet
+from networks import EmbeddingNet, EmbeddingNetVGG, EmbeddingNetRGB, SiameseNet, SiameseNet_ClassNet
 from losses import ContrastiveLoss
 from losses import ContrastiveLoss_mod, CrossEntropy
 
@@ -53,13 +53,29 @@ def writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, inte
             
 seed_offset, ATLW = int(sys.argv[1]), str(sys.argv[2])
 
-dataC = DatasetTorchvision('MNIST')
+# dataset_name = 'MNIST'
+dataset_name = 'CIFAR10'
+
+dataC = DatasetTorchvision(dataset_name)
+if 'MNIST' in dataset_name:
+    EmbeddingNet = EmbeddingNet
+    embd_size=2
+    n_epochs=25
+
+elif 'CIFAR' in dataset_name:
+    # EmbeddingNet = EmbeddingNetRGB
+    EmbeddingNet = EmbeddingNetVGG
+    embd_size=512
+    n_epochs=50
+    n_epochs=2
+    
+# ipdb.set_trace()
 train_dataset, test_dataset, n_classes = dataC.getDataset()
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4"
         
-batch_size = 2**12
+batch_size = 2**11
 
 log_interval = 500
 
@@ -84,28 +100,27 @@ torch.backends.cudnn.benchmark = False
 metric_classes=[SimpleSiamDistAcc, AccumulatedAccuracyMetric_mod]
 
 if ATLW   == 'na': # No automatic loss weight tuning: Grid search
-    start = 0.5
-    n_epochs = 20
+    start = 0.0
     start, interval, end = start, 0.25, start + interval
     seedmax = 1
     log_tag = "grid_search"
+
 elif ATLW == 'kl': # KLMW and MVMW
     init_mix_weight = 0.5
-    n_epochs = 2
     start, interval, end = 0, 1, 1
     seedmax = 50
     log_tag = "auto"
+
 elif ATLW == 'gn': # GradNorm method
     init_mix_weight = 0.5
-    n_epochs = 20
     start, interval, end = 0, 1, 1
     seedmax = 50
     log_tag = "gradnorm"
 
 
-for k in range(0, seedmax):
+for k in range(100+0, 100+seedmax):
     for mwk, mix_weight in enumerate(np.arange(start, end, interval)):
-        if ATLW:
+        if ATLW in ['gn', 'kl']:
             mix_weight = init_mix_weight
             print("Mix weight count:", mwk, mix_weight)
 
@@ -120,8 +135,8 @@ for k in range(0, seedmax):
         siamese_test_MT_loader = torch.utils.data.DataLoader(siamese_MT_test_dataset, batch_size=batch_size, shuffle=True, **kwargs)
         
         # Model Initialization
-        embedding_net = EmbeddingNet()
-        model_mt = SiameseNet_ClassNet(embedding_net, n_classes=n_classes)
+        embedding_net = EmbeddingNet(embd_size)
+        model_mt = SiameseNet_ClassNet(embedding_net, n_classes=n_classes, embd_size=embd_size)
         
         # Step 3
         if cuda:
@@ -131,7 +146,7 @@ for k in range(0, seedmax):
         scheduler_mt = None
         
         mix_weight = torch.tensor(mix_weight).cuda()
-        write_var, mix_weight, mix_weight_list = fit_siam(siamese_train_MT_loader, siamese_test_MT_loader, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=metric_classes, seed=seed)
+        write_var, mix_weight, mix_weight_list = fit_siam(siamese_train_MT_loader, siamese_test_MT_loader, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, embd_size, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=metric_classes, seed=seed)
 
         write_list, mw_list = writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, write_list)
 

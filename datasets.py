@@ -8,6 +8,8 @@ import ipdb
 import copy
 import random
 import os
+import torch
+
 
 from torchvision import transforms
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
@@ -18,7 +20,7 @@ def get_noisylabel(label, n_classes):
     return noisy_label
 
 
-class DatasetTorchvision(object):
+class DatasetTorchvision:
     def __init__(self, dataset_name):
         self.dataset_name = dataset_name
         self.colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
@@ -45,7 +47,8 @@ class DatasetTorchvision(object):
         
     def getDataset(self):
            
-        self.mean, self.std = self.stat_dict[self.dataset_name]['mean'], self.stat_dict[self.dataset_name]['std']
+        # self.mean, self.std = self.stat_dict[self.dataset_name]['mean'], self.stat_dict[self.dataset_name]['std']
+        self.mean, self.std = 0, 1
         self.n_classes = self.num_classes_dict[self.dataset_name]
         self.data_folder = '../data/{}'.format(self.dataset_name)
 
@@ -61,6 +64,18 @@ class DatasetTorchvision(object):
                                         transforms.ToTensor(),
                                         transforms.Normalize((self.mean,), (self.std,))
                                     ]))
+
+        if 'CIFAR' in self.dataset_name:
+            self.train_dataset.train_labels = torch.tensor(self.train_dataset.targets)
+            # self.train_dataset.train_data = torch.tensor(self.train_dataset.data).permute(0, 3, 1, 2) 
+            self.train_dataset.train_data = torch.tensor(self.train_dataset.data)
+            # self.train_dataset.train_data = torch.tensor(self.train_dataset.data)
+            
+            self.test_dataset.test_labels = torch.tensor(self.test_dataset.targets)
+            # self.test_dataset.test_data = torch.tensor(self.test_dataset.data).permute(0, 3, 1, 2)
+            self.test_dataset.test_data = torch.tensor(self.test_dataset.data)
+            # self.test_dataset.test_data = torch.tensor(self.test_dataset.data)
+            # ipdb.set_trace()
         return self.train_dataset, self.test_dataset, self.n_classes
 
 class SiameseMNIST_MT(Dataset):
@@ -69,31 +84,33 @@ class SiameseMNIST_MT(Dataset):
     Test: Creates fixed pairs for testing
     """
 
-    def __init__(self, mnist_dataset, seed=0, noisy_label=False):
+    def __init__(self, mnist_style_dataset, seed=0, noisy_label=False):
         np.random.seed(seed)
-        self.mnist_dataset = mnist_dataset
-
-        self.train = self.mnist_dataset.train
-        self.transform = self.mnist_dataset.transform
-
+        self.mnist_style_dataset = mnist_style_dataset
+    
+        self.train = self.mnist_style_dataset.train
+        self.transform = self.mnist_style_dataset.transform
+        
         if self.train:
-            self.train_labels = self.mnist_dataset.train_labels
-            self.train_data = self.mnist_dataset.train_data
+            self.train_labels = self.mnist_style_dataset.train_labels
+            self.train_data = self.mnist_style_dataset.train_data
             self.labels_set = set(self.train_labels.numpy())
             self.label_to_indices = {label: np.where(self.train_labels.numpy() == label)[0]
                                      for label in self.labels_set}
+            self.data_tensor = self.train_data
         else:
             # generate fixed pairs for testing
-            self.test_labels = self.mnist_dataset.test_labels
+            self.test_labels = self.mnist_style_dataset.test_labels
             if noisy_label:
                 random_idx = torch.randperm(self.test_labels.size()[0]) 
                 self.test_labels = self.test_labels[random_idx]
-            self.test_data = self.mnist_dataset.test_data
+            self.test_data = self.mnist_style_dataset.test_data
             self.labels_set = set(self.test_labels.numpy())
             self.label_to_indices = {label: np.where(self.test_labels.numpy() == label)[0]
                                      for label in self.labels_set}
 
-            
+            self.data_tensor = self.test_data 
+
             positive_pairs = []
             print("creating pairs...")
             for i in range(0, len(self.test_data), 2):
@@ -113,6 +130,12 @@ class SiameseMNIST_MT(Dataset):
                 assert label1 != label2, "label1 and label2 should be different"
                 negative_pairs.append([i, rand_idx[0], 0, label1, label2])
             self.test_pairs = positive_pairs + negative_pairs
+
+        # Setup the image mode:
+        if len(self.data_tensor.shape) == 3:
+            self.image_mode = 'L'
+        if len(self.data_tensor.shape) == 4:
+            self.image_mode = 'RGB'
     
     def __getitem__(self, index):
         # np.random.seed(0)
@@ -139,15 +162,20 @@ class SiameseMNIST_MT(Dataset):
             label1 = self.test_pairs[index][3]
             label2 = self.test_pairs[index][4]
 
-        img1 = Image.fromarray(img1.numpy(), mode='L')
-        img2 = Image.fromarray(img2.numpy(), mode='L')
+        # print("img1 raw", img1.shape, self.image_mode)
+        img1 = Image.fromarray(img1.numpy(), mode=self.image_mode)
+        img2 = Image.fromarray(img2.numpy(), mode=self.image_mode)
+        
+        # print("img1 before transform", img1)
         if self.transform is not None:
             img1 = self.transform(img1)
             img2 = self.transform(img2)
+        
+        # print("img1", img1.shape)
         return (img1, img2), target, label1, label2
 
     def __len__(self):
-        return len(self.mnist_dataset)
+        return len(self.mnist_style_dataset)
 
 class SiameseMNIST(Dataset):
     """
@@ -157,7 +185,11 @@ class SiameseMNIST(Dataset):
 
     def __init__(self, mnist_dataset):
         self.mnist_dataset = mnist_dataset
-
+        if len(self.mnist_dataset.train_data.shape) == 3:
+            self.image_mode = 'L'
+        elif len(self.mnist_dataset.train_data.shape) == 4:
+            self.image_mode = 'RGB'
+    
         self.train = self.mnist_dataset.train
         self.transform = self.mnist_dataset.transform
 
@@ -275,10 +307,10 @@ class TripletMNIST(Dataset):
             img1 = self.test_data[self.test_triplets[index][0]]
             img2 = self.test_data[self.test_triplets[index][1]]
             img3 = self.test_data[self.test_triplets[index][2]]
-
-        img1 = Image.fromarray(img1.numpy(), mode='L')
-        img2 = Image.fromarray(img2.numpy(), mode='L')
-        img3 = Image.fromarray(img3.numpy(), mode='L')
+          
+        img1 = Image.fromarray(img1.numpy(), mode=self.image_mode)
+        img2 = Image.fromarray(img2.numpy(), mode=self.image_mode)
+        img3 = Image.fromarray(img3.numpy(), mode=self.image_mode)
         if self.transform is not None:
             img1 = self.transform(img1)
             img2 = self.transform(img2)
