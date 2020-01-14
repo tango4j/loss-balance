@@ -336,6 +336,7 @@ class BalancedBatchSampler(BatchSampler):
             np.random.shuffle(self.label_to_indices[l])
         self.used_label_indices_count = {label: 0 for label in self.labels_set}
         self.count = 0
+        
         self.n_classes = n_classes
         self.n_samples = n_samples
         self.n_dataset = len(self.labels)

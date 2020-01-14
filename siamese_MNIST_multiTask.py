@@ -67,15 +67,16 @@ elif 'CIFAR' in dataset_name:
     EmbeddingNet = EmbeddingNetVGG
     embd_size=512
     n_epochs=50
-    n_epochs=2
+    # n_epochs=2
     
 # ipdb.set_trace()
 train_dataset, test_dataset, n_classes = dataC.getDataset()
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,4"
         
 batch_size = 2**11
+# batch_size = 2**10
 
 log_interval = 500
 
@@ -89,7 +90,8 @@ loss_fn_ce = CrossEntropy()
 loss_fn_tup = (loss_fn, loss_fn_ce)
 
 
-interval = 0.025
+interval = 0.05
+# interval = 0.1
 write_list, mw_list = [], []
 kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
 
@@ -101,11 +103,12 @@ metric_classes=[SimpleSiamDistAcc, AccumulatedAccuracyMetric_mod]
 
 if ATLW   == 'na': # No automatic loss weight tuning: Grid search
     start = 0.0
-    start, interval, end = start, 0.25, start + interval
+    # interval = interval
+    end = 1.0+ interval
     seedmax = 1
     log_tag = "grid_search"
 
-elif ATLW == 'kl': # KLMW and MVMW
+elif 'kl' in ATLW: # KLMW and MVMW
     init_mix_weight = 0.5
     start, interval, end = 0, 1, 1
     seedmax = 50
@@ -117,10 +120,11 @@ elif ATLW == 'gn': # GradNorm method
     seedmax = 50
     log_tag = "gradnorm"
 
-
-for k in range(100+0, 100+seedmax):
+soff=0
+# ipdb.set_trace()
+for k in range(soff+0, soff+seedmax):
     for mwk, mix_weight in enumerate(np.arange(start, end, interval)):
-        if ATLW in ['gn', 'kl']:
+        if ATLW in ['gn', 'kl', 'klan' ]:
             mix_weight = init_mix_weight
             print("Mix weight count:", mwk, mix_weight)
 

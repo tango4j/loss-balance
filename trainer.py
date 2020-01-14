@@ -99,6 +99,8 @@ def run_pretrain_task(index_tup, loss_tup, batch_hist_list):
         batch_pdf_ce[epoch][batch_idx] = (
             pdf_ce, hist_ce, org_bins_ce, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)))
 
+        ipdb.set_trace()
+
     else:
         if batch_pdf_cst[epoch][batch_idx-1] != []:
             (_, org_hist_cst, org_bins_cst, org_mixed_pdf, org_mixed_bins,
@@ -119,6 +121,8 @@ def run_pretrain_task(index_tup, loss_tup, batch_hist_list):
     batch_hist_list = [batch_pdf_cst, batch_pdf_ce, mw_batch_list, prev_weight]
     return batch_pdf_cst, batch_pdf_ce, batch_hist_list, (max_KL_mw, KL_val, prev_weight)
 
+    
+
 
 def run_epoch_0_task(index_tup, loss_tup, trInst):
     '''
@@ -138,21 +142,44 @@ def run_epoch_0_task(index_tup, loss_tup, trInst):
     '''
     epoch, batch_idx = index_tup
     iter_loss_cst, iter_loss_ce = loss_tup
-    # batch_pdf_cst, batch_pdf_ce, mw_batch_list, prev_weight = batch_hist_list
 
-    pdf_cst, hist_cst, org_bins_cst = get_pdf(iter_loss_cst, bins=None)
-    pdf_ce, hist_ce, org_bins_ce = get_pdf(iter_loss_ce, bins=None)
+    if trInst.ATLW == 'kl':
+        # batch_pdf_cst, batch_pdf_ce, mw_batch_list, prev_weight = batch_hist_list
 
-    lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
-    org_mixed_pdf, lh_hist_raw, org_mixed_bins = get_weighted_pdfs(
-        lh_loss_cst, lh_loss_ce, mixed_bins=None)
-    max_KL_mw, KL_val = get_max_KL_mw_lh(
-        iter_loss_cst, iter_loss_ce, org_mixed_bins, org_mixed_pdf)
+        pdf_cst, hist_cst, org_bins_cst = get_pdf(iter_loss_cst, bins=None)
+        pdf_ce, hist_ce, org_bins_ce = get_pdf(iter_loss_ce, bins=None)
 
-    trInst.batch_pdf_cst[epoch][batch_idx] = (
-        pdf_cst, hist_cst, org_bins_cst, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)))
-    trInst.batch_pdf_ce[epoch][batch_idx] = (
-        pdf_ce, hist_ce, org_bins_ce, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)))
+        lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
+        org_mixed_pdf, lh_hist_raw, org_mixed_bins = get_weighted_pdfs(
+            lh_loss_cst, lh_loss_ce, mixed_bins=None, n_bins=trInst.n_bins)
+        
+        ### Get the arg-max mixed_weight: "max_KL_mw" and its value "KL_val"
+        max_KL_mw, KL_val = get_max_KL_mw_lh(
+            iter_loss_cst, iter_loss_ce, org_mixed_bins, org_mixed_pdf)
+
+        trInst.batch_pdf_cst[epoch][batch_idx] = (
+            pdf_cst, hist_cst, org_bins_cst, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)))
+        trInst.batch_pdf_ce[epoch][batch_idx] = (
+            pdf_ce, hist_ce, org_bins_ce, org_mixed_pdf, org_mixed_bins, (cp(epoch), cp(batch_idx)))
+      
+        ###############################################################################################
+        ### Temporary 
+
+        lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
+        AN_max_KL_mw, AN_KL_val = get_KLanal_max_KL_mw( loss_tup, (lh_loss_cst, lh_loss_ce), trInst)
+    
+        trInst.batch_loss[epoch][batch_idx] = loss_tup
+        ##################################################3
+
+    elif trInst.ATLW == 'klan':
+        lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
+        max_KL_mw, KL_val = get_KLanal_max_KL_mw( loss_tup, (lh_loss_cst, lh_loss_ce), trInst)
+    
+        trInst.batch_loss[epoch][batch_idx] = loss_tup
+        
+        pass
+
+    # ipdb.set_trace()
 
     # save_hist(iter_loss_cst, iter_loss_ce, epoch, batch_idx)
 
@@ -195,7 +222,7 @@ def run_epoch_1_task(index_tup, loss_tup, trInst):
 
     lh_loss_cst, lh_loss_ce = get_lookahead_pdfs(index_tup, loss_tup, trInst)
     lh_mixed_pdf, lh_hist_raw, lh_mixed_bins = get_weighted_pdfs(
-        lh_loss_cst, lh_loss_ce, mixed_bins=org_mixed_bins)
+        lh_loss_cst, lh_loss_ce, mixed_bins=org_mixed_bins, n_bins=trInst.n_bins)
     # Get max_KL_mw from two loss vectors and ref_mixed_bins
     # max_KL_mw, KL_val = get_max_KL_mw(iter_loss_cst, iter_loss_ce, org_mixed_bins, org_mixed_pdf)
     # max_KL_mw, KL_val = get_max_KL_mw_lh(iter_loss_cst, iter_loss_ce, org_mixed_bins, org_mixed_pdf)
@@ -209,7 +236,7 @@ def run_epoch_1_task(index_tup, loss_tup, trInst):
 
     # Get weighted pdfs for reference pdfs
     org_mixed_pdf, mixed_hist_raw, org_mixed_bins = get_weighted_pdfs(
-        iter_loss_cst, iter_loss_ce, mixed_bins=org_mixed_bins)
+        iter_loss_cst, iter_loss_ce, mixed_bins=org_mixed_bins, n_bins=trInst.n_bins)
     trInst.batch_pdf_cst[epoch][batch_idx] = (
         pdf_cst, hist_cst, org_bins_cst, org_mixed_pdf, org_mixed_bins, (epoch, batch_idx))
     trInst.batch_pdf_ce[epoch][batch_idx] = (
@@ -223,7 +250,7 @@ def run_epoch_1_task(index_tup, loss_tup, trInst):
     # print("Ref {}-{}:".format(ref_epoch, ref_batch_idx), org_hist_cst,"\nCur {}-{}:".format(epoch, batch_idx), hist_cst)
     # print("Ref {}-{}:".format(ref_epoch, ref_batch_idx), org_hist_ce, "\nCur {}-{}:".format(epoch, batch_idx), hist_ce)
 
-    save_hist(iter_loss_cst, iter_loss_ce, epoch, batch_idx)
+    # save_hist(iter_loss_cst, iter_loss_ce, epoch, batch_idx)
 
     var_rest_tup = (max_KL_mw, KL_val)
     return trInst, var_rest_tup
@@ -313,6 +340,25 @@ def get_lookahead_pdfs(index_tup, loss_tup, trInst):
 
     return tonp(losses_const), tonp(losses_ce1 + losses_ce2)
 
+
+def get_KLanal_max_KL_mw( current_losses, lh_losses, trInst):
+    n_bins = trInst.n_bins
+    itv = 1.0/n_bins
+    max_ceil = 1.0 + itv
+    kl_from_each_mw = {}
+    curr_losses1, curr_losses2 = current_losses
+    lh_losses1, lh_losses2 = lh_losses
+
+    for mw in np.arange(0, max_ceil, itv):
+        curr_loss_mix = mw * curr_losses1 + (1-mw) * curr_losses2
+        lh_loss_mix = mw * lh_losses1 + (1-mw) * lh_losses2
+
+        mean_curr, mean_lh = np.mean(curr_loss_mix), np.mean(lh_loss_mix)
+        std_curr, std_lh = np.std(curr_loss_mix), np.std(lh_loss_mix)
+        kl_from_each_mw[mw] = np.log(std_curr/std_lh) + ( (std_lh**2) + (mean_lh-mean_curr)**2 )/(2*std_curr**2) - 0.5
+
+    argmin_mw = min(kl_from_each_mw.items(), key=operator.itemgetter(1))[0]
+    return argmin_mw, kl_from_each_mw[argmin_mw]
 
 def get_weighted_pdfs(losses1, losses2, mixed_bins=None, n_bins=500):
     '''
@@ -465,6 +511,7 @@ def define_vars_for_MW_est(length_of_data_loader, max_epoch=500, initial_weight=
         length_of_data_loader)} for i in range(max_epoch)}
     batch_pdf_ce = {i: {x: [] for x in range(
         length_of_data_loader)} for i in range(max_epoch)}
+
     mw_batch_list = [None]*4
     prev_weight = initial_weight
     batch_hist_list = [batch_pdf_cst, batch_pdf_ce, mw_batch_list, prev_weight]
@@ -490,7 +537,8 @@ class GNInst:
         self.T = T
 
 class KLInst:
-    def __init__(self, seed, loss_fn_tup, length_of_data_loader, initial_weight, embd_size):
+    def __init__(self, ATLW, seed, loss_fn_tup, length_of_data_loader, n_epochs, initial_weight, embd_size):
+        self.ATLW = ATLW
         self.seed = seed
 
         self.model = None
@@ -502,7 +550,7 @@ class KLInst:
         self.label2 = None
 
         self.gpu = gpu
-        self.max_epoch = 20
+        self.max_epoch = n_epochs
         self.total_samples = 0
 
         self.mv_mw_sum = 0
@@ -515,16 +563,20 @@ class KLInst:
                               for i in range(self.max_epoch)}
         self.batch_pdf_ce = {i: {x: [] for x in range(length_of_data_loader)}
                              for i in range(self.max_epoch)}
+        self.batch_loss = {i: {x: [] for x in range(length_of_data_loader)}
+                              for i in range(self.max_epoch)}
         self.mw_batch_list = [None]*4
 
         self.initial_weight = initial_weight
         self.prev_weight = self.initial_weight
 
         self.loss_fn_tup = loss_fn_tup
-
         self.margin_LH = 0.01
 
         self.embd_size = embd_size
+
+        self.n_bins = 500
+    
 '''
 Minimum Variance Method
 
@@ -601,6 +653,7 @@ def loss_input_process(*args):
 
 def fit_siam(train_loader, val_loader, model, loss_fn_tup, optimizer_func, scheduler, embd_size, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=[], seed=0, start_epoch=0):
 
+    print("define_vars_for_MW_est got max_epoch:", n_epochs)
     batch_hist_list = define_vars_for_MW_est(
         len(train_loader), max_epoch=n_epochs, initial_weight=0.5)
     start_epoch = 0
@@ -609,10 +662,12 @@ def fit_siam(train_loader, val_loader, model, loss_fn_tup, optimizer_func, sched
     if ATLW != 'na':
         mix_weight = 0.5
 
-    if ATLW in ['kl', 'na']:
-        trInst = KLInst(seed=seed,
+    if ATLW in ['kl', 'klan', 'na']:
+        trInst = KLInst(ATLW=ATLW, 
+                        seed=seed,
                         loss_fn_tup=loss_fn_tup,
                         length_of_data_loader=len(train_loader),
+                        n_epochs=n_epochs,
                         initial_weight=mix_weight, 
                         embd_size=embd_size)
         train_function = train_siam_epoch
@@ -845,7 +900,6 @@ def train_siam_gn_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda
     ce_loss2 /= (batch_idx + 1)
     return total_loss, ce_loss1, ce_loss2, metric_instances, mix_weight, trInst, mix_weight_list
 
-
 def train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, log_interval, metric_classes, trInst, mix_weight, ATLW=0):
     metric_instances = []
     for metric_class in metric_classes:
@@ -920,6 +974,42 @@ def train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, l
 
         lcst, lce1, lce2 = (losses_const.detach().cpu().numpy(
         ), losses_ce1.detach().cpu().numpy(), losses_ce2.detach().cpu().numpy())
+        
+        if ATLW == 'klan':
+            iter_loss_cst, iter_loss_ce = lcst, lce1 + lce2
+
+            min_var_mw = get_min_var_result(iter_loss_cst, iter_loss_ce)
+            if epoch == 0:
+                trInst, var_init_tup = run_epoch_0_task(
+                    (epoch, batch_idx), (iter_loss_cst, iter_loss_ce), trInst)
+                (max_KL_mw, KL_val) = var_init_tup
+
+            else:
+                trInst, var_rest_tup = run_epoch_1_task(
+                    (epoch, batch_idx), (iter_loss_cst, iter_loss_ce), trInst)
+                (max_KL_mw, KL_val) = var_rest_tup
+
+            decay = 0  # decay=epoch for decaying values
+
+            trInst.mv_mw_sum += min_var_mw[0] * losses_const.shape[0] 
+            trInst.kl_mw_sum += max_KL_mw * losses_const.shape[0] 
+            trInst.total_samples += losses_const.shape[0] * \
+                np.exp(-1*decay)
+
+            trInst.cum_MV_weight = round(
+                float(trInst.mv_mw_sum/trInst.total_samples), 4)
+            trInst.cum_KL_weight = round(
+                float(trInst.kl_mw_sum/trInst.total_samples), 4)
+
+            if epoch == 0:
+                mix_weight = cp(trInst.initial_weight)
+            else:
+                mix_weight = cp(trInst.prev_weight)
+
+            print_variables(trInst, max_KL_mw, min_var_mw,
+                            mix_weight, epoch, batch_idx, mode='train')
+            KL_cum_list.append(KL_val)
+
 
         if ATLW == 'kl':
             iter_loss_cst, iter_loss_ce = lcst, lce1 + lce2
@@ -936,7 +1026,7 @@ def train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, l
                 (max_KL_mw, KL_val) = var_rest_tup
 
             decay = 0  # decay=epoch for decaying values
-
+            
             if epoch >= 0:
                 trInst.mv_mw_sum += min_var_mw[0] * \
                     losses_const.shape[0] * np.exp(-1*decay)
@@ -959,16 +1049,17 @@ def train_siam_epoch(train_loader, epoch, model, loss_fn_tup, optimizer, cuda, l
                             mix_weight, epoch, batch_idx, mode='train')
             KL_cum_list.append(KL_val)
 
-        # mix_weight = cp(trInst.prev_weight)
+        ### END of if ATLW == 'kl':
         mix_weight = torch.tensor(mix_weight).cuda().detach()
         mix_weight.requires_grad = False
         loss_mt = torch.mul(mix_weight, loss_outputs) + torch.mul(1 -
                                                                   mix_weight, 1.0*(loss_outputs_ce1 + loss_outputs_ce2))
-        # loss_mt = loss_outputs
-
         loss_mt.backward()
         optimizer.step()
 
+        # loss_mt = loss_outputs
+
+        ### START of display section
         target_source = [target, (label1,)]
         output_sources = [outputs, outputs_ce1]
         for k, metric_instance in enumerate(metric_instances):
