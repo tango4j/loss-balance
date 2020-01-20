@@ -3,9 +3,15 @@
 
 from utils import *
 
-from datasets import DatasetTorchvision, SiameseMNIST, SiameseMNIST_MT
-from networks import EmbeddingNet, EmbeddingNetVGG, EmbeddingNetRGB, SiameseNet, SiameseNet_ClassNet
-from losses import ContrastiveLoss
+from datasets import DatasetTorchvision, SiameseMNIST, SiameseMNIST_MT, TripletMNIST_MT
+from torchvision.datasets import ImageFolder
+from networks import EmbeddingNet, EmbeddingNetVGG, EmbeddingNetRGB, SiameseNet, SiameseNet_ClassNet, Triplet_ClassNet
+        
+from utils import RandomNegativeTripletSelector, HardestNegativeTripletSelector, SemihardNegativeTripletSelector 
+        
+from datasets import BalancedBatchSampler
+
+from losses import ContrastiveLoss, OnlineTripletLoss
 from losses import ContrastiveLoss_mod, CrossEntropy
 
 import torch
@@ -37,26 +43,25 @@ cuda = torch.cuda.is_available()
 2. Do data processing: siamese and classification data togther for multitasking - under procsess
 3. Modify the trainer function
 
-
 ######################################################################
 """
 
-def writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, write_list):
-    write_list.append(write_var)
-    mw_list.append(', '.join(mix_weight_list))
-    
-    exp_tag = getSaveTag(margin, seed_offset, n_epochs, interval)
-    write_txt("log_{}/{}.txt".format(log_tag, exp_tag), write_list)
-
-    print("write var:", write_var)
-    return write_list, mw_list
             
-seed_offset, ATLW = int(sys.argv[1]), str(sys.argv[2])
+seed_offset, ATLW, loss_key = int(sys.argv[1]), str(sys.argv[2]), str(sys.argv[3])
+loss_type_dict = {"co": "Ctrst", "tr": "Trplt"}
+loss_type = loss_type_dict[loss_key]
 
-# dataset_name = 'MNIST'
-dataset_name = 'CIFAR10'
+dataset_name = 'MNIST'
+# dataset_name = 'FashionMNIST'
+# dataset_name = 'CIFAR10'
+# dataset_name = 'CIFAR100'
+# dataset_name = 'CALTECH101'
 
-dataC = DatasetTorchvision(dataset_name)
+if dataset_name == 'CALTECH101':
+    dataC = ImageFolder
+else:
+    dataC = DatasetTorchvision(dataset_name)
+
 if 'MNIST' in dataset_name:
     EmbeddingNet = EmbeddingNet
     embd_size=2
@@ -66,9 +71,12 @@ elif 'CIFAR' in dataset_name:
     # EmbeddingNet = EmbeddingNetRGB
     EmbeddingNet = EmbeddingNetVGG
     embd_size=512
-    n_epochs=50
+    if dataset_name == 'CIFAR10':
+        n_epochs=50
+    elif dataset_name == 'CIFAR100':
+        n_epochs=100
     # n_epochs=2
-    
+ 
 # ipdb.set_trace()
 train_dataset, test_dataset, n_classes = dataC.getDataset()
 
@@ -80,17 +88,43 @@ batch_size = 2**11
 
 log_interval = 500
 
-siamese_MT_train_dataset = SiameseMNIST_MT(train_dataset, seed=0, noisy_label=False) 
-siamese_MT_test_dataset = SiameseMNIST_MT(test_dataset, seed=0, noisy_label=False)
+loss_fn_ce = CrossEntropy()
         
 # Step 4
 margin=1.0
-loss_fn = ContrastiveLoss_mod(margin)
-loss_fn_ce = CrossEntropy()
-loss_fn_tup = (loss_fn, loss_fn_ce)
+loss_type = 'Ctrst'
+loss_type = 'Trplt'
+
+if loss_type == 'Ctrst':
+    siamese_MT_train_dataset = SiameseMNIST_MT(train_dataset, seed=0, noisy_label=False) 
+    siamese_MT_test_dataset = SiameseMNIST_MT(test_dataset, seed=0, noisy_label=False)
+
+    _ClassNet = SiameseNet_ClassNet
+    loss_fn = ContrastiveLoss_mod(margin)
+    loss_fn_tup = (loss_fn, loss_fn_ce)
+
+elif loss_type == 'Trplt':
+    siamese_MT_train_dataset = SiameseMNIST_MT(train_dataset, seed=0, noisy_label=False) 
+    siamese_MT_test_dataset = SiameseMNIST_MT(test_dataset, seed=0, noisy_label=False)
+
+    # batch_size=2**7
+    batch_size=2**15
+    batch_size=311250
+    triplet_seed_samples = 250
+    train_batch_sampler = BalancedBatchSampler(train_dataset.train_labels, n_classes=n_classes, n_samples=triplet_seed_samples)
+    test_batch_sampler = BalancedBatchSampler(test_dataset.test_labels, n_classes=n_classes, n_samples=triplet_seed_samples)
+    
+    # kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
+    # _ClassNet = SiameseNet_ClassNet
+    _ClassNet = Triplet_ClassNet
+    # loss_fn_triplet= OnlineTripletLoss(margin, HardestNegativeTripletSelector(batch_size, margin))
+    loss_fn_triplet= OnlineTripletLoss(margin, RandomNegativeTripletSelector(batch_size, margin))
+    
+    loss_fn = ContrastiveLoss_mod(margin)
+    loss_fn_tup = (loss_fn, loss_fn_triplet, loss_fn_ce)
 
 
-interval = 0.05
+interval = 0.2
 # interval = 0.1
 write_list, mw_list = [], []
 kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
@@ -101,11 +135,13 @@ torch.backends.cudnn.benchmark = False
 
 metric_classes=[SimpleSiamDistAcc, AccumulatedAccuracyMetric_mod]
 
+soff=0
 if ATLW   == 'na': # No automatic loss weight tuning: Grid search
-    start = 0.0
+    start = 0
+    # start = 0.5
     # interval = interval
-    end = 1.0+ interval
-    seedmax = 1
+    end = 1.0+ (interval*0.5)
+    seedmax = 10
     log_tag = "grid_search"
 
 elif 'kl' in ATLW: # KLMW and MVMW
@@ -120,9 +156,9 @@ elif ATLW == 'gn': # GradNorm method
     seedmax = 50
     log_tag = "gradnorm"
 
-soff=0
 # ipdb.set_trace()
-for k in range(soff+0, soff+seedmax):
+seed_range = (soff+1, soff+seedmax)
+for k in range(seed_range[0], seed_range[1]+1):
     for mwk, mix_weight in enumerate(np.arange(start, end, interval)):
         if ATLW in ['gn', 'kl', 'klan' ]:
             mix_weight = init_mix_weight
@@ -135,12 +171,16 @@ for k in range(soff+0, soff+seedmax):
         np.random.seed(seed)
 
         # Data Loader Initialization
-        siamese_train_MT_loader = torch.utils.data.DataLoader(siamese_MT_train_dataset, batch_size=batch_size, shuffle=False, **kwargs)
-        siamese_test_MT_loader = torch.utils.data.DataLoader(siamese_MT_test_dataset, batch_size=batch_size, shuffle=True, **kwargs)
+        if loss_type == "Ctrst":
+            siamese_train_MT_loader = torch.utils.data.DataLoader(siamese_MT_train_dataset, batch_size=batch_size, shuffle=False, **kwargs)
+            siamese_test_MT_loader = torch.utils.data.DataLoader(siamese_MT_test_dataset, batch_size=batch_size, shuffle=True, **kwargs)
+        elif loss_type == "Trplt":
+            siamese_train_MT_loader = torch.utils.data.DataLoader(train_dataset, batch_sampler=train_batch_sampler, **kwargs)
+            siamese_test_MT_loader = torch.utils.data.DataLoader(test_dataset, batch_sampler=test_batch_sampler, **kwargs)
         
         # Model Initialization
         embedding_net = EmbeddingNet(embd_size)
-        model_mt = SiameseNet_ClassNet(embedding_net, n_classes=n_classes, embd_size=embd_size)
+        model_mt = _ClassNet(embedding_net, n_classes=n_classes, embd_size=embd_size)
         
         # Step 3
         if cuda:
@@ -150,8 +190,9 @@ for k in range(soff+0, soff+seedmax):
         scheduler_mt = None
         
         mix_weight = torch.tensor(mix_weight).cuda()
-        write_var, mix_weight, mix_weight_list = fit_siam(siamese_train_MT_loader, siamese_test_MT_loader, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, embd_size, n_epochs, cuda, log_interval, mix_weight, ATLW, metric_classes=metric_classes, seed=seed)
-
-        write_list, mw_list = writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, write_list)
-
+        variable_dict = {"embd_size": embd_size, "mix_weight": mix_weight, "ATLW": ATLW, "seed": seed, "margin": margin, "seed_range":seed_range, "loss_type": loss_type,
+                "interval": interval, "log_tag": log_tag, "dataset_name": dataset_name, "model_name": embedding_net.model_name, "write_list": write_list, "batch_size": batch_size}
+        write_var, write_list, mix_weight, mix_weight_list = fit_siam(siamese_train_MT_loader, siamese_test_MT_loader, model_mt, loss_fn_tup, optimizer_mt, scheduler_mt, n_epochs, cuda, log_interval, metric_classes, variable_dict)
+    
+        # write_list, mw_list = writeAndSave(write_var, mix_weight_list, margin, seed_offset, n_epochs, interval, log_tag, write_list)
 

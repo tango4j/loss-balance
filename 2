@@ -186,8 +186,7 @@ class Triplet_ClassNet(nn.Module):
             outraw1 = self.embedding_net(x1)
         elif type(x1) == type(None):
             if type(outraw1) == type(None):
-                outraw1, scores1 = None, None
-                # pass
+                pass
                 # raise ValueError("x1 and outraw1 inputs are all None")
 
         if type(outraw1) != type(None):
@@ -197,16 +196,15 @@ class Triplet_ClassNet(nn.Module):
         if type(x2) != type(None):
             outraw2= self.embedding_net(x2)
             output2  = self.nonlinear(outraw2)
-            scores2 = F.log_softmax(self.fc(output2), dim=-1)
+            scores2 = F.log_softmax(self.fc1(output2), dim=-1)
         elif type(x2) == type(None):
             if type(outraw2) == type(None):
-                outraw2, scores2 = None, None
-                # pass
+                pass
                 # raise ValueError("x2 and outraw2 inputs are all None")
 
         if type(outraw2) != type(None):
             output2  = self.nonlinear(outraw2)
-            scores2 = F.log_softmax(self.fc(output2), dim=-1)
+            scores2 = F.log_softmax(self.fc1(output2), dim=-1)
 
         return outraw1, outraw2, scores1, scores2
 

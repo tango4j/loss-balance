@@ -30,10 +30,10 @@ class AccumulatedAccuracyMetric_mod(Metric):
 
     def eval_score(self, outputs, target, distance):
         pred = outputs[0].data.max(1, keepdim=True)[1]
-        try:
-            self.correct += pred.eq(target[0].data.view_as(pred)).cpu().sum()
-        except:
-            ipdb.set_trace()
+        # try:
+        self.correct += pred.eq(target[0].data.view_as(pred)).cpu().sum()
+        # except:
+            # ipdb.set_trace()
         self.total += target[0].size(0)
         return self.value()
 
@@ -100,6 +100,8 @@ class SimpleSiamDistAcc(Metric):
     def eval_score(self, outputs, target, distance):
 
         # with torch.no_grad():
+        # if distance == None:
+            # distance = (output[1]- output[0]).pow(2).sum(1)  # squared distances
         self.outputs_np = distance.detach().cpu().numpy()
         self.target_np = target[0].detach().cpu().numpy()
         self.pred = self.outputs_np.ravel() < self.thres

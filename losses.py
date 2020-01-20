@@ -62,6 +62,7 @@ class ContrastiveLoss_mod(nn.Module):
         self.eps = 1e-9
 
     def forward(self, output1, output2, target, size_average=True):
+        # ipdb.set_trace()
         distances = (output2 - output1).pow(2).sum(1)  # squared distances
         losses = 0.5 * (target.float() * distances +
                         (1 + -1 * target).float() * F.relu(self.margin - (distances + self.eps).sqrt()).pow(2))
@@ -102,8 +103,8 @@ class OnlineContrastiveLoss(nn.Module):
     def forward(self, embeddings, target):
         positive_pairs, negative_pairs = self.pair_selector.get_pairs(embeddings, target)
         if embeddings.is_cuda:
-            positive_pairs = positive_pairs.cuda(DEVICE)
-            negative_pairs = negative_pairs.cuda(DEVICE)
+            positive_pairs = positive_pairs.cuda()
+            negative_pairs = negative_pairs.cuda()
         positive_loss = (embeddings[positive_pairs[:, 0]] - embeddings[positive_pairs[:, 1]]).pow(2).sum(1)
         negative_loss = F.relu(
             self.margin - (embeddings[negative_pairs[:, 0]] - embeddings[negative_pairs[:, 1]]).pow(2).sum(
@@ -125,15 +126,17 @@ class OnlineTripletLoss(nn.Module):
         self.margin = margin
         self.triplet_selector = triplet_selector
 
-    def forward(self, embeddings, target):
-
-        triplets = self.triplet_selector.get_triplets(embeddings, target)
+    def forward(self, embeddings, target, pre_triplets=None, lh_mode=False):
+        if lh_mode:
+            triplets = pre_triplets
+        else:
+            triplets = self.triplet_selector.get_triplets(embeddings, target)
 
         if embeddings.is_cuda:
-            triplets = triplets.cuda(DEVICE)
+            triplets = triplets.cuda()
 
         ap_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 1]]).pow(2).sum(1)  # .pow(.5)
         an_distances = (embeddings[triplets[:, 0]] - embeddings[triplets[:, 2]]).pow(2).sum(1)  # .pow(.5)
         losses = F.relu(ap_distances - an_distances + self.margin)
 
-        return losses.mean(), len(triplets)
+        return losses.mean(), len(triplets), losses, embeddings, triplets

@@ -2,10 +2,13 @@ from itertools import combinations
 
 import numpy as np
 import torch
-gpu = 3
 
-def getSaveTag(margin, seed_offset, n_epochs, interval):
-    return "margin{}_seedoffset_{}_epoch_{}_intvl{}".format(margin, seed_offset, n_epochs, interval)
+import ipdb
+import numpy.random as rd
+gpu=3
+
+def getSaveTag(vd, ATLW, margin, seed_range, n_epochs, interval, head=""):
+    return head + "ATLW-{}_BS{}_margin{}_seedRange{}_intvl{}_{}-{}-{}".format(ATLW, vd['batch_size'], margin, "{}-{}".format(seed_range[0], seed_range[1]), interval, vd['loss_type'], vd['model_name'], vd['dataset_name'])
 
 
 def write_txt(w_path, list_to_wr):
@@ -148,9 +151,10 @@ class FunctionNegativeTripletSelector(TripletSelector):
     and return a negative index for that pair
     """
 
-    def __init__(self, margin, negative_selection_fn, cpu=True):
+    def __init__(self, max_batch_size, margin, negative_selection_fn, cpu=True):
         super(FunctionNegativeTripletSelector, self).__init__()
         self.cpu = cpu
+        self.max_batch_size = max_batch_size
         self.margin = margin
         self.negative_selection_fn = negative_selection_fn
 
@@ -162,6 +166,8 @@ class FunctionNegativeTripletSelector(TripletSelector):
 
         labels = labels.cpu().data.numpy()
         triplets = []
+        max_size_per_label = int(self.max_batch_size/len(set(labels)))
+        count_dict = {label:0 for label in labels}
 
         for label in set(labels):
             label_mask = (labels == label)
@@ -171,16 +177,34 @@ class FunctionNegativeTripletSelector(TripletSelector):
             negative_indices = np.where(np.logical_not(label_mask))[0]
             anchor_positives = list(combinations(label_indices, 2))  # All anchor-positive pairs
             anchor_positives = np.array(anchor_positives)
-
+            np.random.shuffle(anchor_positives)
+            
+            ### anchor_positives[:, 0] is an actual anchor.
             ap_distances = distance_matrix[anchor_positives[:, 0], anchor_positives[:, 1]]
+
+            ### For this "label", go through all the positive combinations.
             for anchor_positive, ap_distance in zip(anchor_positives, ap_distances):
+
+                ### loss_values: ap_distance should be smaller than an distance.
+                ### Thus, loss_values should be < 0.
+                ### If loss_values > 0, then it is not good and it should be changed.
                 loss_values = ap_distance - distance_matrix[torch.LongTensor(np.array([anchor_positive[0]])), torch.LongTensor(negative_indices)] + self.margin
                 loss_values = loss_values.data.cpu().numpy()
-                hard_negative = self.negative_selection_fn(loss_values)
-                if hard_negative is not None:
-                    hard_negative = negative_indices[hard_negative]
-                    triplets.append([anchor_positive[0], anchor_positive[1], hard_negative])
 
+                ### Select an index (there are plenty of different methods)
+                hard_negative = self.negative_selection_fn(loss_values)
+                # ipdb.set_trace()
+                if hard_negative is not None:
+                    ### Get the index of that negative index
+                    hard_negative = negative_indices[hard_negative]
+                    ### G
+                    triplets.append([anchor_positive[0], anchor_positive[1], hard_negative])
+                
+                # count_dict[label]  += 1
+                # if count_dict[label] > max_size_per_label:
+                    # break
+
+        # ipdb.set_trace()
         if len(triplets) == 0:
             triplets.append([anchor_positive[0], anchor_positive[1], negative_indices[0]])
 
@@ -189,16 +213,16 @@ class FunctionNegativeTripletSelector(TripletSelector):
         return torch.LongTensor(triplets)
 
 
-def HardestNegativeTripletSelector(margin, cpu=False): return FunctionNegativeTripletSelector(margin=margin,
+def HardestNegativeTripletSelector(max_batch_size, margin, cpu=False): return FunctionNegativeTripletSelector(max_batch_size, margin=margin,
                                                                                  negative_selection_fn=hardest_negative,
                                                                                  cpu=cpu)
 
 
-def RandomNegativeTripletSelector(margin, cpu=False): return FunctionNegativeTripletSelector(margin=margin,
+def RandomNegativeTripletSelector(max_batch_size, margin, cpu=False): return FunctionNegativeTripletSelector(max_batch_size, margin=margin,
                                                                                 negative_selection_fn=random_hard_negative,
                                                                                 cpu=cpu)
 
 
-def SemihardNegativeTripletSelector(margin, cpu=False): return FunctionNegativeTripletSelector(margin=margin,
+def SemihardNegativeTripletSelector(max_batch_size, margin, cpu=False): return FunctionNegativeTripletSelector(max_batch_size, margin=margin,
                                                                                   negative_selection_fn=lambda x: semihard_negative(x, margin),
                                                                                   cpu=cpu)
